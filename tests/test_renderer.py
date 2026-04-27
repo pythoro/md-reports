@@ -214,6 +214,47 @@ def test_seq_field_present_in_caption(tmp_path):
     assert "SEQ" in instr and "Table" in instr
 
 
+def test_caption_uses_concrete_style_without_inline_italic(tmp_path):
+    md_text = "Table: cap.\n\n| a |\n|---|\n| 1 |\n"
+    out = tmp_path / "concrete.docx"
+    convert_markdown_text(md_text, out)
+    doc = _open(out)
+    cap = next(p for p in doc.paragraphs if p.style.name == "Caption")
+    # The default template's Caption style supplies italic, so the
+    # renderer should not also stamp italic on the runs themselves.
+    assert all(r.italic is None for r in cap.runs)
+
+
+def test_caption_falls_back_to_inline_italic_when_style_missing(tmp_path):
+    from docx import Document as DocxDocument
+    from docx.oxml.ns import qn
+    from md_reports import DocxRenderer
+
+    template_src = get_default_template_path()
+    stripped = tmp_path / "stripped.docx"
+    stripped.write_bytes(template_src.read_bytes())
+    doc = DocxDocument(str(stripped))
+    styles_el = doc.styles.element
+    for s in list(styles_el.findall(qn("w:style"))):
+        if s.get(qn("w:styleId")) == "Caption":
+            styles_el.remove(s)
+    doc.save(str(stripped))
+
+    out = tmp_path / "fallback.docx"
+    md_text = "Table: cap.\n\n| a |\n|---|\n| 1 |\n"
+    convert_markdown_text(
+        md_text,
+        out,
+        renderer=DocxRenderer(template_path=stripped),
+    )
+    doc2 = _open(out)
+    cap = next(
+        p for p in doc2.paragraphs if "Table" in _full_paragraph_text(p)
+    )
+    assert cap.style.name == "Normal"
+    assert any(r.italic is True for r in cap.runs)
+
+
 def _one_pixel_png() -> bytes:
     """A minimal valid 1x1 PNG."""
     import base64

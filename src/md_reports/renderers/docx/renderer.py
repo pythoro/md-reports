@@ -412,24 +412,22 @@ class DocxRenderer(BaseRenderer):
         number: int,
         text_inlines: list[Inline],
     ) -> None:
-        style = "Caption" if style_exists(ctx.doc, "Caption") else "Normal"
+        has_caption_style = style_exists(ctx.doc, "Caption")
+        style = "Caption" if has_caption_style else "Normal"
         para = ctx.doc.add_paragraph(style=style)
-        if style == "Normal":
-            # tasteful fallback formatting
-            label = para.add_run(f"{prefix} ")
+        label = para.add_run(f"{prefix} ")
+        if not has_caption_style:
             label.italic = True
-        else:
-            para.add_run(f"{prefix} ")
         self._append_seq_field(para, prefix, str(number))
         if text_inlines:
             sep_run = para.add_run(": ")
-            if style == "Normal":
+            if not has_caption_style:
                 sep_run.italic = True
             self._render_inlines(
                 ctx,
                 para,
                 text_inlines,
-                force_italic=(style == "Normal"),
+                force_italic=not has_caption_style,
             )
 
     def _append_seq_field(

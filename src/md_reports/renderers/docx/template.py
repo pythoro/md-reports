@@ -43,7 +43,12 @@ def load_docx_template(path: str | Path | None) -> DocxDoc:
 
 
 def style_exists(doc: DocxDoc, name: str) -> bool:
-    """Return True if ``name`` is a known style in ``doc``."""
+    """Return True if ``name`` is a concretely-defined style in ``doc``.
+
+    python-docx's ``doc.styles[name]`` only resolves entries with a real
+    ``<w:style>`` element — not latent-style placeholders — so a True
+    result means Word has actual formatting to apply.
+    """
     try:
         doc.styles[name]
         return True
