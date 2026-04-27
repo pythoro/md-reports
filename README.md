@@ -134,6 +134,43 @@ tables, accept the same preceding-`Table:` caption, and use the
 `Table Grid` style. The delimiter is auto-detected via `csv.Sniffer`
 (falls back to comma); encoding is UTF-8.
 
+#### Embedding a pandas DataFrame
+
+Pass a DataFrame in the context and pipe it through the built-in
+`to_csv` Jinja2 filter inside a `csv` fence:
+
+````markdown
+Table: Quarterly figures.
+
+```csv
+{{ df | to_csv }}
+```
+````
+
+```python
+import pandas as pd
+
+df = pd.DataFrame(
+    {"region": ["EMEA", "APAC"], "q1": [1, 3], "q2": [2, 4]}
+)
+convert_markdown_text(markdown_text, "out.docx", context={"df": df})
+```
+
+The filter calls `value.to_csv(index=False)` and strips the trailing
+newline. Captions, the shared `Table N` counter, and the `no-header`
+flag all work the same as for any `csv` fence.
+
+The filter is duck-typed on `.to_csv()` — pandas is **not** a
+dependency of `md-ast-docx`. Any object with a compatible `.to_csv()`
+method works (your script provides it). Pass any kwargs supported by
+the underlying method, e.g.:
+
+````markdown
+```csv
+{{ df | to_csv(sep=';', na_rep='—', index=True) }}
+```
+````
+
 ## Jinja2 context
 
 Pass a `context` dict to inject script-side values into the markdown

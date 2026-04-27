@@ -292,10 +292,29 @@ data, captions, link URLs).
   provided.
 * No new public exception classes; ``ValidationError`` is reused.
 
+### Built-in filters
+
+* ``to_csv``: convert a DataFrame-like object (anything with a
+  ``.to_csv()`` method) to CSV text suitable for dropping into a
+  ``csv`` fence. Defaults to ``index=False`` when the underlying
+  method accepts that kwarg; passes through other kwargs (``sep=``,
+  ``na_rep=``, etc.); strips the trailing newline. Pandas is **not**
+  a dependency — duck-typing only.
+
+  Usage:
+
+  ````markdown
+  Table: Quarterly figures.
+
+  ```csv
+  {{ df | to_csv }}
+  ```
+  ````
+
 ### Deferred
 
 1. A literal-``{{`` escape — only add when a real use case appears.
-2. Custom Jinja2 filters/globals beyond the built-in set.
+2. Additional custom Jinja2 filters/globals beyond ``to_csv``.
 3. Type-validation of context values beyond what Jinja2 itself
    tolerates at render time.
 

@@ -17,18 +17,53 @@ Behavior on undefined variables and Jinja2 errors depends on
 
 from __future__ import annotations
 
+import inspect
 import warnings
 from typing import Any
 
 from jinja2 import (
     Environment,
     StrictUndefined,
-    TemplateSyntaxError,
+    TemplateError,
     Undefined,
-    UndefinedError,
 )
 
 from md_ast_docx.errors import ValidationError
+
+
+def _to_csv_filter(value: Any, **kwargs: Any) -> str:
+    """Jinja2 filter that converts a DataFrame-like to CSV text.
+
+    Duck-typed: any object with a ``.to_csv()`` method that returns a
+    string is accepted (pandas DataFrames are the typical case).
+
+    By default ``index=False`` is passed so the DataFrame index is
+    dropped. Other kwargs pass through to the underlying ``to_csv()``
+    call (e.g., ``sep=";"``, ``na_rep="—"``). The trailing newline
+    pandas appends is stripped so the rendered text drops cleanly into
+    a ``csv`` fence without producing a phantom empty row.
+    """
+    if not hasattr(value, "to_csv"):
+        raise TypeError(
+            f"to_csv filter requires an object with a .to_csv() "
+            f"method (e.g., a pandas DataFrame); got "
+            f"{type(value).__name__}"
+        )
+    method = value.to_csv
+    if "index" not in kwargs:
+        try:
+            if "index" in inspect.signature(method).parameters:
+                kwargs["index"] = False
+        except (TypeError, ValueError):
+            pass
+    result = method(**kwargs)
+    if result is None:
+        raise TypeError(
+            "to_csv filter expected a string return value but got "
+            "None — the underlying .to_csv() likely wrote to a file "
+            "or buffer rather than returning text"
+        )
+    return str(result).strip()
 
 
 class _KeepUndefined(Undefined):
@@ -66,10 +101,11 @@ def apply_context(
         keep_trailing_newline=True,
         autoescape=False,
     )
+    env.filters["to_csv"] = _to_csv_filter
     try:
         template = env.from_string(text)
         return template.render(**context)
-    except (TemplateSyntaxError, UndefinedError) as exc:
+    except (TemplateError, TypeError, ValueError) as exc:
         if strict:
             raise ValidationError(
                 f"Jinja2 substitution failed: {exc}"
