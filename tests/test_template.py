@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from md_ast_docx.errors import TemplateError
-from md_ast_docx.template import (
+from md_ast_docx.renderers.docx.template import (
     get_default_template_path,
-    load_template,
+    load_docx_template,
     style_exists,
 )
 
@@ -18,7 +18,7 @@ def test_default_template_path_exists():
 
 
 def test_load_default_template_has_required_styles():
-    doc = load_template(None)
+    doc = load_docx_template(None)
     for required in (
         "Normal",
         "Heading 1",
@@ -37,4 +37,4 @@ def test_load_default_template_has_required_styles():
 
 def test_load_template_missing_path_raises():
     with pytest.raises(TemplateError):
-        load_template("does/not/exist.docx")
+        load_docx_template("does/not/exist.docx")

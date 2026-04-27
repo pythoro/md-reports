@@ -10,7 +10,7 @@ from docx.oxml.ns import qn
 
 from md_ast_docx import (
     ConversionOptions,
-    MarkdownDocxConverter,
+    MarkdownConverter,
     convert_markdown_file,
     convert_markdown_text,
     get_default_template_path,
@@ -171,7 +171,7 @@ def test_strict_missing_image_raises(tmp_path):
 
 
 def test_converter_class_reuses_template(tmp_path):
-    conv = MarkdownDocxConverter()
+    conv = MarkdownConverter()
     a = tmp_path / "a.docx"
     b = tmp_path / "b.docx"
     conv.convert_text("# A", a)

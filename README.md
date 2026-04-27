@@ -35,16 +35,25 @@ Reusable converter (avoids reloading the template each call; supports
 a `default_context` shared across all conversions):
 
 ```python
-from md_ast_docx import MarkdownDocxConverter, ConversionOptions
+from md_ast_docx import (
+    ConversionOptions, DocxRenderer, MarkdownConverter,
+)
 
-conv = MarkdownDocxConverter(
-    template_path="house_style.docx",
-    options=ConversionOptions(strict_mode=True),
+conv = MarkdownConverter(
+    renderer=DocxRenderer(
+        template_path="house_style.docx",
+        options=ConversionOptions(strict_mode=True),
+    ),
     default_context={"site": "Acme"},
 )
 conv.convert_file("a.md", "a.docx", context={"doc": "Q1"})
 conv.convert_file("b.md", "b.docx", context={"doc": "Q2"})
 ```
+
+The `renderer` argument selects the output format. `DocxRenderer` is
+the only built-in renderer today; the abstraction is in place for
+additional renderers (e.g. HTML) to be added without changes to
+`parse`, the model, options, or `MarkdownConverter`.
 
 ## What's supported
 
@@ -217,7 +226,7 @@ Supported value types include `str`, `int`, `float`, `bool`, `None`,
 - `strict_mode=True`: any undefined variable or template error raises
   `ValidationError`.
 
-`MarkdownDocxConverter` accepts a `default_context` at construction
+`MarkdownConverter` accepts a `default_context` at construction
 time and per-call `context=` overrides that merge over it (call-site
 keys win).
 
@@ -237,7 +246,8 @@ ConversionOptions(
 
 ## Templates
 
-If `template_path` is omitted, a packaged default template is used. To
+If `template_path` is omitted on `DocxRenderer` (or you don't pass a
+renderer at all), a packaged default DOCX template is used. To
 inspect or copy the default:
 
 ```python

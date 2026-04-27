@@ -1,4 +1,7 @@
-"""Template loading and default template resolution."""
+"""DOCX template loading and style helpers.
+
+These are DOCX-specific concerns and live alongside the DOCX renderer.
+"""
 
 from __future__ import annotations
 
@@ -12,14 +15,14 @@ from md_ast_docx.errors import TemplateError
 
 
 def get_default_template_path() -> Path:
-    """Return the filesystem path of the packaged default template."""
-    ref = resources.files("md_ast_docx.resources").joinpath(
+    """Return the filesystem path of the packaged default DOCX template."""
+    ref = resources.files("md_ast_docx.renderers.docx.resources").joinpath(
         "default_template.docx"
     )
     return Path(str(ref))
 
 
-def load_template(path: str | Path | None) -> DocxDoc:
+def load_docx_template(path: str | Path | None) -> DocxDoc:
     """Load a DOCX template, falling back to the packaged default.
 
     Raises:

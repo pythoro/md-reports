@@ -8,7 +8,7 @@ from docx.oxml.ns import qn
 
 from md_ast_docx import (
     ConversionOptions,
-    MarkdownDocxConverter,
+    MarkdownConverter,
     convert_markdown_text,
 )
 from md_ast_docx.context import apply_context
@@ -208,11 +208,11 @@ def test_non_strict_missing_key_keeps_literal_in_doc(tmp_path):
     assert "{{ missing }}" in texts
 
 
-# --- MarkdownDocxConverter default_context --------------------------
+# --- MarkdownConverter default_context --------------------------
 
 
 def test_converter_default_context(tmp_path):
-    conv = MarkdownDocxConverter(default_context={"who": "World"})
+    conv = MarkdownConverter(default_context={"who": "World"})
     out = tmp_path / "a.docx"
     conv.convert_text("Hello {{ who }}", out)
     doc = DocxDocument(str(out))
@@ -220,7 +220,7 @@ def test_converter_default_context(tmp_path):
 
 
 def test_converter_per_call_context_overrides_default(tmp_path):
-    conv = MarkdownDocxConverter(default_context={"who": "World"})
+    conv = MarkdownConverter(default_context={"who": "World"})
     out = tmp_path / "b.docx"
     conv.convert_text("Hello {{ who }}", out, context={"who": "Alice"})
     doc = DocxDocument(str(out))
@@ -228,7 +228,7 @@ def test_converter_per_call_context_overrides_default(tmp_path):
 
 
 def test_converter_per_call_extends_default(tmp_path):
-    conv = MarkdownDocxConverter(default_context={"site": "Acme"})
+    conv = MarkdownConverter(default_context={"site": "Acme"})
     out = tmp_path / "c.docx"
     conv.convert_text("{{ site }} - {{ doc }}", out, context={"doc": "Q1"})
     doc = DocxDocument(str(out))

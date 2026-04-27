@@ -1,19 +1,31 @@
-"""md_ast_docx — Convert Markdown to DOCX with template-driven styling.
+"""md_ast_docx — Markdown to document conversion with pluggable renderers.
 
 Public API:
-    convert_markdown_text(markdown_text, output_path, *, template_path,
-        options) -> Path
-    convert_markdown_file(markdown_path, output_path, *, template_path,
-        options) -> Path
-    MarkdownDocxConverter(template_path=None, options=None)
-    ConversionOptions(...)
+    convert_markdown_text(markdown_text, output_path, *, renderer,
+        options, context) -> Path
+    convert_markdown_file(markdown_path, output_path, *, renderer,
+        options, context) -> Path
+    MarkdownConverter(renderer=None, options=None, default_context=None)
+
+Renderers:
+    BaseRenderer            — abstract base for output-format renderers
+    DocxRenderer(template_path=None, options=None) — default renderer
+    RenderContext           — per-render mutable state container
+
+DOCX-specific helpers:
     get_default_template_path() -> Path
+
+Configuration:
+    ConversionOptions(...)
+
+Errors:
+    MdAstDocxError, ParseError, RenderError, TemplateError, ValidationError
 """
 
 from __future__ import annotations
 
 from md_ast_docx.api import (
-    MarkdownDocxConverter,
+    MarkdownConverter,
     convert_markdown_file,
     convert_markdown_text,
 )
@@ -25,13 +37,20 @@ from md_ast_docx.errors import (
     ValidationError,
 )
 from md_ast_docx.options import ConversionOptions
-from md_ast_docx.template import get_default_template_path
+from md_ast_docx.renderers.base import BaseRenderer, RenderContext
+from md_ast_docx.renderers.docx import (
+    DocxRenderer,
+    get_default_template_path,
+)
 
 __all__ = [
+    "BaseRenderer",
     "ConversionOptions",
-    "MarkdownDocxConverter",
+    "DocxRenderer",
+    "MarkdownConverter",
     "MdAstDocxError",
     "ParseError",
+    "RenderContext",
     "RenderError",
     "TemplateError",
     "ValidationError",

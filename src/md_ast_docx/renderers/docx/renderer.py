@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import csv
-import io
 import warnings
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -15,7 +13,6 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 from docx.text.paragraph import Paragraph as DocxParagraph
 
-from md_ast_docx.errors import RenderError
 from md_ast_docx.model import (
     Block,
     BlockQuote,
@@ -41,7 +38,11 @@ from md_ast_docx.model import (
     Text,
 )
 from md_ast_docx.options import ConversionOptions
-from md_ast_docx.template import style_exists
+from md_ast_docx.renderers.base import BaseRenderer, RenderContext
+from md_ast_docx.renderers.docx.template import (
+    load_docx_template,
+    style_exists,
+)
 
 _HYPERLINK_REL = (
     "http://schemas.openxmlformats.org/officeDocument/2006/"
@@ -64,50 +65,67 @@ class _RunSegment:
     line_break_after: bool = False
 
 
-class Renderer:
-    """Render a parsed :class:`Document` into a DOCX document."""
+@dataclass(kw_only=True)
+class _DocxContext(RenderContext):
+    """RenderContext extended with the DOCX document handle."""
+
+    doc: DocxDoc
+
+
+class DocxRenderer(BaseRenderer):
+    """Render a parsed :class:`Document` into a DOCX file.
+
+    A template DOCX is loaded fresh on each ``render()`` call, so a
+    single ``DocxRenderer`` instance can be reused for multiple
+    conversions.
+    """
 
     def __init__(
         self,
-        doc: DocxDoc,
-        options: ConversionOptions,
-        markdown_dir: Path | None,
+        template_path: str | Path | None = None,
+        options: ConversionOptions | None = None,
     ) -> None:
-        self.doc = doc
-        self.options = options
-        self.markdown_dir = markdown_dir
-        self.figure_counter = 0
-        self.table_counter = 0
+        super().__init__(options)
+        self.template_path = template_path
 
-    # --- public entry -------------------------------------------------
-
-    def render(self, document: Document) -> None:
+    def render(
+        self,
+        document: Document,
+        output_path: Path,
+        *,
+        markdown_dir: Path | None = None,
+    ) -> Path:
+        docx_doc = load_docx_template(self.template_path)
+        ctx = _DocxContext(markdown_dir=markdown_dir, doc=docx_doc)
         for block in document.blocks:
-            self._render_block(block)
+            self._render_block(ctx, block)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        docx_doc.save(str(output_path))
+        return output_path
 
     # --- block dispatch -----------------------------------------------
 
-    def _render_block(self, block: Block) -> None:
+    def _render_block(self, ctx: _DocxContext, block: Block) -> None:
         if isinstance(block, Heading):
-            self._render_heading(block)
+            self._render_heading(ctx, block)
         elif isinstance(block, Paragraph):
-            self._render_paragraph(block)
+            self._render_paragraph(ctx, block)
         elif isinstance(block, CodeBlock):
-            self._render_code_block(block)
+            self._render_code_block(ctx, block)
         elif isinstance(block, BlockQuote):
-            self._render_blockquote(block)
+            self._render_blockquote(ctx, block)
         elif isinstance(block, BulletList):
-            self._render_list(block, ordered=False, level=1)
+            self._render_list(ctx, block, ordered=False, level=1)
         elif isinstance(block, OrderedList):
-            self._render_list(block, ordered=True, level=1)
+            self._render_list(ctx, block, ordered=True, level=1)
         elif isinstance(block, Table):
-            self._render_table(block)
+            self._render_table(ctx, block)
         elif isinstance(block, ImageBlock):
-            self._render_image_block(block)
+            self._render_image_block(ctx, block)
         elif isinstance(block, CsvFileEmbed):
-            self._render_csv_file(block)
+            self._render_csv_file(ctx, block)
         elif isinstance(block, CsvInlineEmbed):
-            self._render_csv_inline(block)
+            self._render_csv_inline(ctx, block)
         else:
             self._warn_or_raise(
                 f"Unsupported block type: {type(block).__name__}"
@@ -115,15 +133,15 @@ class Renderer:
 
     # --- headings -----------------------------------------------------
 
-    def _render_heading(self, h: Heading) -> None:
-        style = self._heading_style(h.level)
-        para = self.doc.add_paragraph(style=style)
-        self._render_inlines(para, h.children)
+    def _render_heading(self, ctx: _DocxContext, h: Heading) -> None:
+        style = self._heading_style(ctx, h.level)
+        para = ctx.doc.add_paragraph(style=style)
+        self._render_inlines(ctx, para, h.children)
 
-    def _heading_style(self, level: int) -> str:
+    def _heading_style(self, ctx: _DocxContext, level: int) -> str:
         for lvl in range(level, 0, -1):
             name = f"Heading {lvl}"
-            if style_exists(self.doc, name):
+            if style_exists(ctx.doc, name):
                 return name
         if level > 1:
             warnings.warn(
@@ -135,40 +153,41 @@ class Renderer:
 
     # --- paragraph ----------------------------------------------------
 
-    def _render_paragraph(self, p: Paragraph) -> None:
-        para = self.doc.add_paragraph()
+    def _render_paragraph(self, ctx: _DocxContext, p: Paragraph) -> None:
+        para = ctx.doc.add_paragraph()
         deferred: list[InlineImage] = []
-        self._render_inlines(para, p.children, deferred_images=deferred)
+        self._render_inlines(ctx, para, p.children, deferred_images=deferred)
         for img in deferred:
-            self._emit_figure(img.src, img.alt, after_paragraph=True)
+            self._emit_figure(ctx, img.src, img.alt, after_paragraph=True)
 
     # --- code block ---------------------------------------------------
 
-    def _render_code_block(self, cb: CodeBlock) -> None:
-        if style_exists(self.doc, "Code"):
-            para = self.doc.add_paragraph(style="Code")
+    def _render_code_block(self, ctx: _DocxContext, cb: CodeBlock) -> None:
+        if style_exists(ctx.doc, "Code"):
+            para = ctx.doc.add_paragraph(style="Code")
             para.add_run(cb.text.rstrip("\n"))
         else:
-            para = self.doc.add_paragraph()
+            para = ctx.doc.add_paragraph()
             run = para.add_run(cb.text.rstrip("\n"))
             run.font.name = "Consolas"
             run.font.size = Pt(10)
 
     # --- blockquote ---------------------------------------------------
 
-    def _render_blockquote(self, bq: BlockQuote) -> None:
-        quote_style = "Quote" if style_exists(self.doc, "Quote") else "Normal"
+    def _render_blockquote(self, ctx: _DocxContext, bq: BlockQuote) -> None:
+        quote_style = "Quote" if style_exists(ctx.doc, "Quote") else "Normal"
         for inner in bq.blocks:
             if isinstance(inner, Paragraph):
-                para = self.doc.add_paragraph(style=quote_style)
-                self._render_inlines(para, inner.children)
+                para = ctx.doc.add_paragraph(style=quote_style)
+                self._render_inlines(ctx, para, inner.children)
             else:
-                self._render_block(inner)
+                self._render_block(ctx, inner)
 
     # --- lists --------------------------------------------------------
 
     def _render_list(
         self,
+        ctx: _DocxContext,
         lst: BulletList | OrderedList,
         ordered: bool,
         level: int,
@@ -180,28 +199,33 @@ class Renderer:
                 stacklevel=3,
             )
         for item in lst.items:
-            self._render_list_item(item, ordered, level)
+            self._render_list_item(ctx, item, ordered, level)
 
     def _render_list_item(
-        self, item: ListItem, ordered: bool, level: int
+        self,
+        ctx: _DocxContext,
+        item: ListItem,
+        ordered: bool,
+        level: int,
     ) -> None:
-        style = self._list_style(ordered, level)
+        style = self._list_style(ctx, ordered, level)
         first_para_emitted = False
         for blk in item.blocks:
             if isinstance(blk, Paragraph) and not first_para_emitted:
-                para = self.doc.add_paragraph(style=style)
-                self._render_inlines(para, blk.children)
+                para = ctx.doc.add_paragraph(style=style)
+                self._render_inlines(ctx, para, blk.children)
                 first_para_emitted = True
             elif isinstance(blk, (BulletList, OrderedList)):
                 self._render_list(
+                    ctx,
                     blk,
                     ordered=isinstance(blk, OrderedList),
                     level=level + 1,
                 )
             else:
-                self._render_block(blk)
+                self._render_block(ctx, blk)
 
-    def _list_style(self, ordered: bool, level: int) -> str:
+    def _list_style(self, ctx: _DocxContext, ordered: bool, level: int) -> str:
         base = "List Number" if ordered else "List Bullet"
         candidates = []
         if level > 1:
@@ -210,37 +234,43 @@ class Renderer:
         candidates.append("List Paragraph")
         candidates.append("Normal")
         for name in candidates:
-            if style_exists(self.doc, name):
+            if style_exists(ctx.doc, name):
                 return name
         return "Normal"
 
     # --- tables -------------------------------------------------------
 
-    def _render_table(self, t: Table) -> None:
+    def _render_table(self, ctx: _DocxContext, t: Table) -> None:
         n_cols = max(
             len(t.header.cells),
             *(len(r.cells) for r in t.body),
             1,
         )
         if t.caption is not None:
-            self.table_counter += 1
+            ctx.table_counter += 1
             self._emit_caption(
+                ctx,
                 self.options.table_caption_prefix,
-                self.table_counter,
+                ctx.table_counter,
                 t.caption,
             )
         table_style = (
-            "Table Grid" if style_exists(self.doc, "Table Grid") else None
+            "Table Grid" if style_exists(ctx.doc, "Table Grid") else None
         )
         n_rows = 1 + len(t.body)
-        table = self.doc.add_table(rows=n_rows, cols=n_cols)
+        table = ctx.doc.add_table(rows=n_rows, cols=n_cols)
         if table_style:
             table.style = table_style
         self._fill_row(
-            table.rows[0].cells, t.header.cells, t.alignments, bold=True
+            ctx,
+            table.rows[0].cells,
+            t.header.cells,
+            t.alignments,
+            bold=True,
         )
         for i, row in enumerate(t.body, start=1):
             self._fill_row(
+                ctx,
                 table.rows[i].cells,
                 row.cells,
                 t.alignments,
@@ -249,6 +279,7 @@ class Renderer:
 
     def _fill_row(
         self,
+        ctx: _DocxContext,
         docx_cells,
         model_cells: list[TableCell],
         alignments: list[str | None],
@@ -264,7 +295,7 @@ class Renderer:
         for i, dcell in enumerate(docx_cells):
             mcell = model_cells[i] if i < len(model_cells) else TableCell()
             para = dcell.paragraphs[0]
-            self._render_inlines(para, mcell.children)
+            self._render_inlines(ctx, para, mcell.children)
             if bold:
                 for run in para.runs:
                     run.bold = True
@@ -274,15 +305,21 @@ class Renderer:
 
     # --- images / figure captions -------------------------------------
 
-    def _render_image_block(self, ib: ImageBlock) -> None:
-        self._emit_figure(ib.src, ib.alt, after_paragraph=False)
+    def _render_image_block(self, ctx: _DocxContext, ib: ImageBlock) -> None:
+        self._emit_figure(ctx, ib.src, ib.alt, after_paragraph=False)
 
-    def _emit_figure(self, src: str, alt: str, after_paragraph: bool) -> None:
-        path = self._resolve_asset_path(src, kind="image")
+    def _emit_figure(
+        self,
+        ctx: _DocxContext,
+        src: str,
+        alt: str,
+        after_paragraph: bool,
+    ) -> None:
+        path = self._resolve_asset_path(ctx, src, kind="image")
         if path is None:
             return
         if not after_paragraph:
-            para = self.doc.add_paragraph()
+            para = ctx.doc.add_paragraph()
             run = para.add_run()
             try:
                 run.add_picture(str(path))
@@ -290,44 +327,21 @@ class Renderer:
                 self._warn_or_raise(f"Failed to embed image {path}: {exc}")
                 return
         # else: image was rendered inline already
-        self.figure_counter += 1
+        ctx.figure_counter += 1
         cap_inlines: list[Inline] = []
         if alt:
             cap_inlines.append(Text(alt))
         self._emit_caption(
+            ctx,
             self.options.figure_caption_prefix,
-            self.figure_counter,
+            ctx.figure_counter,
             cap_inlines,
         )
 
-    def _resolve_asset_path(
-        self, src: str, kind: str = "asset"
-    ) -> Path | None:
-        if src.startswith(("http://", "https://")):
-            self._warn_or_raise(f"Remote {kind} not supported: {src}")
-            return None
-        candidate = Path(src)
-        resolved = (
-            candidate
-            if candidate.is_absolute()
-            else (self._asset_base() / candidate).resolve()
-        )
-        if not resolved.exists():
-            self._warn_or_raise(f"{kind.capitalize()} not found: {resolved}")
-            return None
-        return resolved
-
-    def _asset_base(self) -> Path:
-        if self.options.project_root is not None:
-            return Path(self.options.project_root)
-        if self.markdown_dir is not None:
-            return self.markdown_dir
-        return Path.cwd()
-
     # --- CSV embedding -----------------------------------------------
 
-    def _render_csv_file(self, c: CsvFileEmbed) -> None:
-        path = self._resolve_asset_path(c.path, kind="CSV file")
+    def _render_csv_file(self, ctx: _DocxContext, c: CsvFileEmbed) -> None:
+        path = self._resolve_asset_path(ctx, c.path, kind="CSV file")
         if path is None:
             return
         try:
@@ -339,26 +353,18 @@ class Renderer:
         if not rows:
             self._warn_or_raise(f"CSV is empty: {path}")
             return
-        self._emit_csv_table(rows, c.has_header, c.caption)
+        self._emit_csv_table(ctx, rows, c.has_header, c.caption)
 
-    def _render_csv_inline(self, c: CsvInlineEmbed) -> None:
+    def _render_csv_inline(self, ctx: _DocxContext, c: CsvInlineEmbed) -> None:
         rows = self._parse_csv_text(c.data)
         if not rows:
             self._warn_or_raise("Inline CSV block is empty")
             return
-        self._emit_csv_table(rows, c.has_header, c.caption)
-
-    def _parse_csv_text(self, text: str) -> list[list[str]]:
-        if not text.strip():
-            return []
-        try:
-            dialect = csv.Sniffer().sniff(text[:1024], delimiters=",;\t|")
-        except csv.Error:
-            dialect = csv.excel
-        return list(csv.reader(io.StringIO(text), dialect=dialect))
+        self._emit_csv_table(ctx, rows, c.has_header, c.caption)
 
     def _emit_csv_table(
         self,
+        ctx: _DocxContext,
         rows: list[list[str]],
         has_header: bool,
         caption: list[Inline] | None,
@@ -371,17 +377,18 @@ class Renderer:
             1,
         )
         if caption is not None:
-            self.table_counter += 1
+            ctx.table_counter += 1
             self._emit_caption(
+                ctx,
                 self.options.table_caption_prefix,
-                self.table_counter,
+                ctx.table_counter,
                 caption,
             )
         n_rows = (1 if header is not None else 0) + len(body)
         if n_rows == 0:
             return
-        table = self.doc.add_table(rows=n_rows, cols=n_cols)
-        if style_exists(self.doc, "Table Grid"):
+        table = ctx.doc.add_table(rows=n_rows, cols=n_cols)
+        if style_exists(ctx.doc, "Table Grid"):
             table.style = "Table Grid"
         row_idx = 0
         if header is not None:
@@ -399,10 +406,14 @@ class Renderer:
     # --- captions -----------------------------------------------------
 
     def _emit_caption(
-        self, prefix: str, number: int, text_inlines: list[Inline]
+        self,
+        ctx: _DocxContext,
+        prefix: str,
+        number: int,
+        text_inlines: list[Inline],
     ) -> None:
-        style = "Caption" if style_exists(self.doc, "Caption") else "Normal"
-        para = self.doc.add_paragraph(style=style)
+        style = "Caption" if style_exists(ctx.doc, "Caption") else "Normal"
+        para = ctx.doc.add_paragraph(style=style)
         if style == "Normal":
             # tasteful fallback formatting
             label = para.add_run(f"{prefix} ")
@@ -415,7 +426,10 @@ class Renderer:
             if style == "Normal":
                 sep_run.italic = True
             self._render_inlines(
-                para, text_inlines, force_italic=(style == "Normal")
+                ctx,
+                para,
+                text_inlines,
+                force_italic=(style == "Normal"),
             )
 
     def _append_seq_field(
@@ -435,6 +449,7 @@ class Renderer:
 
     def _render_inlines(
         self,
+        ctx: _DocxContext,
         para: DocxParagraph,
         inlines: list[Inline],
         deferred_images: list[InlineImage] | None = None,
@@ -442,6 +457,7 @@ class Renderer:
     ) -> None:
         for inline in inlines:
             self._render_inline(
+                ctx,
                 para,
                 inline,
                 _RunFormat(italic=force_italic),
@@ -450,6 +466,7 @@ class Renderer:
 
     def _render_inline(
         self,
+        ctx: _DocxContext,
         para: DocxParagraph,
         inline: Inline,
         fmt: _RunFormat,
@@ -466,15 +483,15 @@ class Renderer:
         elif isinstance(inline, Strong):
             new_fmt = _RunFormat(bold=True, italic=fmt.italic, code=fmt.code)
             for child in inline.children:
-                self._render_inline(para, child, new_fmt, deferred_images)
+                self._render_inline(ctx, para, child, new_fmt, deferred_images)
         elif isinstance(inline, Emphasis):
             new_fmt = _RunFormat(bold=fmt.bold, italic=True, code=fmt.code)
             for child in inline.children:
-                self._render_inline(para, child, new_fmt, deferred_images)
+                self._render_inline(ctx, para, child, new_fmt, deferred_images)
         elif isinstance(inline, Link):
-            self._render_link(para, inline, fmt)
+            self._render_link(ctx, para, inline, fmt)
         elif isinstance(inline, InlineImage):
-            self._render_inline_image(para, inline, deferred_images)
+            self._render_inline_image(ctx, para, inline, deferred_images)
         else:
             self._warn_or_raise(f"Unsupported inline: {type(inline).__name__}")
 
@@ -493,11 +510,12 @@ class Renderer:
 
     def _render_inline_image(
         self,
+        ctx: _DocxContext,
         para: DocxParagraph,
         img: InlineImage,
         deferred_images: list[InlineImage] | None,
     ) -> None:
-        path = self._resolve_asset_path(img.src, kind="image")
+        path = self._resolve_asset_path(ctx, img.src, kind="image")
         if path is None:
             return
         try:
@@ -512,6 +530,7 @@ class Renderer:
 
     def _render_link(
         self,
+        ctx: _DocxContext,
         para: DocxParagraph,
         link: Link,
         fmt: _RunFormat,
@@ -524,7 +543,7 @@ class Renderer:
                 stacklevel=3,
             )
             for child in link.children:
-                self._render_inline(para, child, fmt, None)
+                self._render_inline(ctx, para, child, fmt, None)
             return
         try:
             r_id = para.part.relate_to(href, _HYPERLINK_REL, is_external=True)
@@ -534,7 +553,7 @@ class Renderer:
                 stacklevel=3,
             )
             for child in link.children:
-                self._render_inline(para, child, fmt, None)
+                self._render_inline(ctx, para, child, fmt, None)
             return
         hyperlink = OxmlElement("w:hyperlink")
         hyperlink.set(qn("r:id"), r_id)
@@ -624,10 +643,3 @@ class Renderer:
         if seg.line_break_after:
             run.append(OxmlElement("w:br"))
         return run
-
-    # --- helpers ------------------------------------------------------
-
-    def _warn_or_raise(self, msg: str) -> None:
-        if self.options.strict_mode:
-            raise RenderError(msg)
-        warnings.warn(msg, stacklevel=3)

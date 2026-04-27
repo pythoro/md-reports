@@ -8,19 +8,25 @@ from typing import Any
 from md_ast_docx.errors import ValidationError
 from md_ast_docx.options import ConversionOptions
 from md_ast_docx.parser import parse
-from md_ast_docx.renderer import Renderer
-from md_ast_docx.template import load_template
+from md_ast_docx.renderers.base import BaseRenderer
+from md_ast_docx.renderers.docx import DocxRenderer
 
 
 def convert_markdown_text(
     markdown_text: str,
     output_path: str | Path,
     *,
-    template_path: str | Path | None = None,
+    renderer: BaseRenderer | None = None,
     options: ConversionOptions | None = None,
     context: dict[str, Any] | None = None,
 ) -> Path:
-    """Convert a Markdown string to DOCX written at ``output_path``.
+    """Convert a Markdown string to a document at ``output_path``.
+
+    The output format is decided by ``renderer``. If omitted, defaults
+    to :class:`DocxRenderer` so a plain ``.docx`` is produced.
+
+    If ``options`` is given alongside ``renderer``, ``ValidationError``
+    is raised — pass options to whichever you construct, not both.
 
     If ``context`` is provided, the markdown is rendered as a Jinja2
     template against it before parsing.
@@ -30,10 +36,10 @@ def convert_markdown_text(
     return _convert(
         markdown_text=markdown_text,
         output_path=Path(output_path),
-        template_path=template_path,
+        renderer=renderer,
         options=options,
-        markdown_dir=None,
         context=context,
+        markdown_dir=None,
     )
 
 
@@ -41,14 +47,14 @@ def convert_markdown_file(
     markdown_path: str | Path,
     output_path: str | Path,
     *,
-    template_path: str | Path | None = None,
+    renderer: BaseRenderer | None = None,
     options: ConversionOptions | None = None,
     context: dict[str, Any] | None = None,
 ) -> Path:
-    """Read a Markdown file and write a DOCX at ``output_path``.
+    """Read a Markdown file and write the rendered document to disk.
 
-    If ``context`` is provided, the markdown is rendered as a Jinja2
-    template against it before parsing.
+    Same parameters as :func:`convert_markdown_text` but reads the
+    source from ``markdown_path``.
     """
     md_path = Path(markdown_path)
     if not md_path.exists():
@@ -57,10 +63,10 @@ def convert_markdown_file(
     return _convert(
         markdown_text=text,
         output_path=Path(output_path),
-        template_path=template_path,
+        renderer=renderer,
         options=options,
-        markdown_dir=md_path.parent.resolve(),
         context=context,
+        markdown_dir=md_path.parent.resolve(),
     )
 
 
@@ -68,36 +74,47 @@ def _convert(
     *,
     markdown_text: str,
     output_path: Path,
-    template_path: str | Path | None,
+    renderer: BaseRenderer | None,
     options: ConversionOptions | None,
-    markdown_dir: Path | None,
     context: dict[str, Any] | None,
+    markdown_dir: Path | None,
 ) -> Path:
-    opts = options or ConversionOptions()
+    if renderer is not None and options is not None:
+        raise ValidationError(
+            "Pass options to either the renderer or convert_*, not both"
+        )
+    opts = (renderer.options if renderer else options) or ConversionOptions()
     document = parse(markdown_text, opts, context=context)
-    docx_doc = load_template(template_path)
-    Renderer(docx_doc, opts, markdown_dir).render(document)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    docx_doc.save(str(output_path))
-    return output_path
+    r = renderer or DocxRenderer(options=opts)
+    return r.render(document, output_path, markdown_dir=markdown_dir)
 
 
-class MarkdownDocxConverter:
-    """Reusable converter holding template, options, and a default
+class MarkdownConverter:
+    """Reusable converter holding renderer, options, and a default
     Jinja2 context.
 
-    Per-call ``context`` arguments are merged over ``default_context``
-    (call-site keys win).
+    The renderer drives output format. Defaults to
+    :class:`DocxRenderer`. Per-call ``context`` arguments are merged
+    over ``default_context`` (call-site keys win).
     """
 
     def __init__(
         self,
-        template_path: str | Path | None = None,
+        renderer: BaseRenderer | None = None,
         options: ConversionOptions | None = None,
         default_context: dict[str, Any] | None = None,
     ) -> None:
-        self.template_path = template_path
-        self.options = options or ConversionOptions()
+        if renderer is not None and options is not None:
+            raise ValidationError(
+                "Pass options to either the renderer or "
+                "MarkdownConverter, not both"
+            )
+        self.options = (
+            renderer.options if renderer else options
+        ) or ConversionOptions()
+        self.renderer: BaseRenderer = renderer or DocxRenderer(
+            options=self.options
+        )
         self.default_context: dict[str, Any] = dict(default_context or {})
 
     def convert_text(
@@ -110,8 +127,7 @@ class MarkdownDocxConverter:
         return convert_markdown_text(
             markdown_text,
             output_path,
-            template_path=self.template_path,
-            options=self.options,
+            renderer=self.renderer,
             context=self._merge_context(context),
         )
 
@@ -125,8 +141,7 @@ class MarkdownDocxConverter:
         return convert_markdown_file(
             markdown_path,
             output_path,
-            template_path=self.template_path,
-            options=self.options,
+            renderer=self.renderer,
             context=self._merge_context(context),
         )
 
