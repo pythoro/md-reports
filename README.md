@@ -22,9 +22,17 @@ convert_markdown_text(
 
 # from a file (relative image paths resolve against the markdown file)
 convert_markdown_file("doc.md", "doc.docx")
+
+# inject script values via Jinja2 substitution
+convert_markdown_text(
+    "# Q{{ q }} report\n\nRevenue grew by **{{ pct }}%**.",
+    "report.docx",
+    context={"q": 2, "pct": 14.5},
+)
 ```
 
-Reusable converter (avoids reloading the template each call):
+Reusable converter (avoids reloading the template each call; supports
+a `default_context` shared across all conversions):
 
 ```python
 from md_ast_docx import MarkdownDocxConverter, ConversionOptions
@@ -32,9 +40,10 @@ from md_ast_docx import MarkdownDocxConverter, ConversionOptions
 conv = MarkdownDocxConverter(
     template_path="house_style.docx",
     options=ConversionOptions(strict_mode=True),
+    default_context={"site": "Acme"},
 )
-conv.convert_file("a.md", "a.docx")
-conv.convert_file("b.md", "b.docx")
+conv.convert_file("a.md", "a.docx", context={"doc": "Q1"})
+conv.convert_file("b.md", "b.docx", context={"doc": "Q2"})
 ```
 
 ## What's supported
@@ -124,6 +133,56 @@ CSV-derived tables share the same `Table N` counter as native markdown
 tables, accept the same preceding-`Table:` caption, and use the
 `Table Grid` style. The delimiter is auto-detected via `csv.Sniffer`
 (falls back to comma); encoding is UTF-8.
+
+## Jinja2 context
+
+Pass a `context` dict to inject script-side values into the markdown
+before parsing. Substitution runs once on the raw markdown text, so
+values flow into every textual position — body, headings, table cells,
+image paths, CSV file paths, inline CSV data, captions:
+
+```python
+convert_markdown_text(
+    "# {{ title | upper }}\n\nGrowth: **{{ pct }}%**",
+    "out.docx",
+    context={"title": "q1 results", "pct": 14.5},
+)
+```
+
+The full Jinja2 syntax is available — variables, filters, conditionals,
+loops:
+
+```markdown
+# {{ report_title }}
+
+{% for finding in findings %}
+- {{ finding }}
+{% endfor %}
+
+{% if show_appendix %}
+## Appendix
+
+See [details]({{ appendix_url }}).
+{% endif %}
+```
+
+Supported value types include `str`, `int`, `float`, `bool`, `None`,
+`list`/`tuple` of those, and `dict` (for attribute access via
+`{{ user.name }}`).
+
+**Missing-variable behavior**:
+
+- Default mode: a simple `{{ name }}` whose key is missing renders as
+  the literal `{{ name }}` and emits a warning — visible breadcrumb,
+  no silent data loss. More complex Jinja2 errors (syntax errors,
+  iteration over an undefined sequence, etc.) cause the markdown to
+  be left unchanged with a warning.
+- `strict_mode=True`: any undefined variable or template error raises
+  `ValidationError`.
+
+`MarkdownDocxConverter` accepts a `default_context` at construction
+time and per-call `context=` overrides that merge over it (call-site
+keys win).
 
 ## Options
 

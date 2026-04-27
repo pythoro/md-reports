@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import re
 import warnings
+from typing import Any
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
+from md_ast_docx.context import apply_context
 from md_ast_docx.errors import ParseError
 from md_ast_docx.model import (
     Block,
@@ -48,9 +50,20 @@ _HTML_LINK_OPEN = re.compile(
 _HTML_LINK_CLOSE = re.compile(r"</a\s*>", re.IGNORECASE)
 
 
-def parse(text: str, options: ConversionOptions | None = None) -> Document:
-    """Parse markdown text into a :class:`Document`."""
+def parse(
+    text: str,
+    options: ConversionOptions | None = None,
+    context: dict[str, Any] | None = None,
+) -> Document:
+    """Parse markdown text into a :class:`Document`.
+
+    If ``context`` is provided, the markdown is first rendered as a
+    Jinja2 template against it. See :mod:`md_ast_docx.context` for
+    behavior on undefined variables and template errors.
+    """
     opts = options or ConversionOptions()
+    if context:
+        text = apply_context(text, context, opts.strict_mode)
     md = MarkdownIt("commonmark").enable("table")
     tokens = md.parse(text)
     blocks, _ = _parse_blocks(tokens, 0, len(tokens), opts)

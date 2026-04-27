@@ -22,6 +22,11 @@ Date: 2026-04-27
    ` ```csv-file ` (body is a path) and ` ```csv ` (body is literal CSV
    data). CSV-derived tables share the same `Table N` counter as
    markdown tables and accept the same preceding-`Table:` caption.
+9. Markdown text is rendered as a Jinja2 template against a per-call
+   ``context`` dict before parsing. Full Jinja2 (variables, filters,
+   conditionals, loops) is supported. Missing variables warn and emit
+   a literal ``{{ name }}`` breadcrumb in non-strict mode; strict mode
+   raises ``ValidationError``.
 
 ## Low-Level XML Areas
 
@@ -248,6 +253,51 @@ data/raw.csv
 2. Numeric formatting / locale-aware number rendering.
 3. Cell-level styling sourced from CSV (e.g., colored cells).
 4. Streaming/very-large CSVs — v1 reads the whole file.
+
+## Jinja2 Context Substitution
+
+A per-call ``context: dict`` is rendered against the raw markdown text
+*before* tokenization, so values flow into every textual position
+(body, headings, table cells, image paths, CSV paths, inline CSV
+data, captions, link URLs).
+
+### API
+
+* ``convert_markdown_text(... , context=None)``
+* ``convert_markdown_file(... , context=None)``
+* ``MarkdownDocxConverter(template_path, options, default_context=None)``
+  with per-call ``context=`` that merges over the default.
+* ``parse(text, options, context=None)`` for direct users.
+
+### Behavior
+
+1. Full Jinja2 syntax: variables, filters, conditionals, loops, etc.
+2. Accepted value types: ``str``, ``int``, ``float``, ``bool``,
+   ``None``, ``list``/``tuple`` of those, and ``dict`` (for
+   ``{{ user.name }}`` attribute access).
+3. Substitution runs once, before markdown-it tokenization.
+4. Undefined variable, non-strict: ``{{ name }}`` is preserved as a
+   literal breadcrumb in the output and a warning is emitted via the
+   custom ``_KeepUndefined`` class.
+5. Undefined variable, strict: raises ``ValidationError``.
+6. Other Jinja2 errors (template syntax, iteration over undefined,
+   etc.), non-strict: the markdown is left unchanged with a warning.
+7. Other Jinja2 errors, strict: raises ``ValidationError``.
+
+### Implementation
+
+* New module ``md_ast_docx.context`` holding ``apply_context()`` and
+  ``_KeepUndefined``.
+* ``parser.parse()`` calls ``apply_context()`` when a context is
+  provided.
+* No new public exception classes; ``ValidationError`` is reused.
+
+### Deferred
+
+1. A literal-``{{`` escape — only add when a real use case appears.
+2. Custom Jinja2 filters/globals beyond the built-in set.
+3. Type-validation of context values beyond what Jinja2 itself
+   tolerates at render time.
 
 ## Default Template Strategy
 
