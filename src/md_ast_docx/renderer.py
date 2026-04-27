@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import warnings
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -19,6 +21,8 @@ from md_ast_docx.model import (
     BlockQuote,
     BulletList,
     CodeBlock,
+    CsvFileEmbed,
+    CsvInlineEmbed,
     Document,
     Emphasis,
     Heading,
@@ -100,6 +104,10 @@ class Renderer:
             self._render_table(block)
         elif isinstance(block, ImageBlock):
             self._render_image_block(block)
+        elif isinstance(block, CsvFileEmbed):
+            self._render_csv_file(block)
+        elif isinstance(block, CsvInlineEmbed):
+            self._render_csv_inline(block)
         else:
             self._warn_or_raise(
                 f"Unsupported block type: {type(block).__name__}"
@@ -270,7 +278,7 @@ class Renderer:
         self._emit_figure(ib.src, ib.alt, after_paragraph=False)
 
     def _emit_figure(self, src: str, alt: str, after_paragraph: bool) -> None:
-        path = self._resolve_image_path(src)
+        path = self._resolve_asset_path(src, kind="image")
         if path is None:
             return
         if not after_paragraph:
@@ -292,27 +300,101 @@ class Renderer:
             cap_inlines,
         )
 
-    def _resolve_image_path(self, src: str) -> Path | None:
+    def _resolve_asset_path(
+        self, src: str, kind: str = "asset"
+    ) -> Path | None:
         if src.startswith(("http://", "https://")):
-            self._warn_or_raise(f"Remote image not supported: {src}")
+            self._warn_or_raise(f"Remote {kind} not supported: {src}")
             return None
         candidate = Path(src)
-        if candidate.is_absolute():
-            resolved = candidate
-        else:
-            base = self._image_base()
-            resolved = (base / candidate).resolve()
+        resolved = (
+            candidate
+            if candidate.is_absolute()
+            else (self._asset_base() / candidate).resolve()
+        )
         if not resolved.exists():
-            self._warn_or_raise(f"Image not found: {resolved}")
+            self._warn_or_raise(f"{kind.capitalize()} not found: {resolved}")
             return None
         return resolved
 
-    def _image_base(self) -> Path:
-        if self.options.image_base_path is not None:
-            return Path(self.options.image_base_path)
+    def _asset_base(self) -> Path:
+        if self.options.project_root is not None:
+            return Path(self.options.project_root)
         if self.markdown_dir is not None:
             return self.markdown_dir
         return Path.cwd()
+
+    # --- CSV embedding -----------------------------------------------
+
+    def _render_csv_file(self, c: CsvFileEmbed) -> None:
+        path = self._resolve_asset_path(c.path, kind="CSV file")
+        if path is None:
+            return
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            self._warn_or_raise(f"Failed to read CSV {path}: {exc}")
+            return
+        rows = self._parse_csv_text(text)
+        if not rows:
+            self._warn_or_raise(f"CSV is empty: {path}")
+            return
+        self._emit_csv_table(rows, c.has_header, c.caption)
+
+    def _render_csv_inline(self, c: CsvInlineEmbed) -> None:
+        rows = self._parse_csv_text(c.data)
+        if not rows:
+            self._warn_or_raise("Inline CSV block is empty")
+            return
+        self._emit_csv_table(rows, c.has_header, c.caption)
+
+    def _parse_csv_text(self, text: str) -> list[list[str]]:
+        if not text.strip():
+            return []
+        try:
+            dialect = csv.Sniffer().sniff(text[:1024], delimiters=",;\t|")
+        except csv.Error:
+            dialect = csv.excel
+        return list(csv.reader(io.StringIO(text), dialect=dialect))
+
+    def _emit_csv_table(
+        self,
+        rows: list[list[str]],
+        has_header: bool,
+        caption: list[Inline] | None,
+    ) -> None:
+        header = rows[0] if has_header else None
+        body = rows[1:] if has_header else rows
+        n_cols = max(
+            len(header or []),
+            *(len(r) for r in body),
+            1,
+        )
+        if caption is not None:
+            self.table_counter += 1
+            self._emit_caption(
+                self.options.table_caption_prefix,
+                self.table_counter,
+                caption,
+            )
+        n_rows = (1 if header is not None else 0) + len(body)
+        if n_rows == 0:
+            return
+        table = self.doc.add_table(rows=n_rows, cols=n_cols)
+        if style_exists(self.doc, "Table Grid"):
+            table.style = "Table Grid"
+        row_idx = 0
+        if header is not None:
+            for i, dcell in enumerate(table.rows[0].cells):
+                cell_text = header[i] if i < len(header) else ""
+                run = dcell.paragraphs[0].add_run(cell_text)
+                run.bold = True
+            row_idx = 1
+        for body_row in body:
+            for i, dcell in enumerate(table.rows[row_idx].cells):
+                cell_text = body_row[i] if i < len(body_row) else ""
+                dcell.paragraphs[0].add_run(cell_text)
+            row_idx += 1
 
     # --- captions -----------------------------------------------------
 
@@ -415,7 +497,7 @@ class Renderer:
         img: InlineImage,
         deferred_images: list[InlineImage] | None,
     ) -> None:
-        path = self._resolve_image_path(img.src)
+        path = self._resolve_asset_path(img.src, kind="image")
         if path is None:
             return
         try:

@@ -131,6 +131,32 @@ class ImageBlock:
     title: str | None = None
 
 
+@dataclass
+class CsvFileEmbed:
+    """Embed a CSV file as a DOCX table.
+
+    Produced by the parser when it sees a ``csv-file`` fenced block.
+    Path resolution and CSV reading happen at render time.
+    """
+
+    path: str
+    has_header: bool = True
+    caption: list[Inline] | None = None
+
+
+@dataclass
+class CsvInlineEmbed:
+    """Embed inline CSV literal data as a DOCX table.
+
+    Produced by the parser when it sees a ``csv`` fenced block whose
+    body is the CSV data itself.
+    """
+
+    data: str
+    has_header: bool = True
+    caption: list[Inline] | None = None
+
+
 Block = (
     Heading
     | Paragraph
@@ -140,6 +166,8 @@ Block = (
     | OrderedList
     | Table
     | ImageBlock
+    | CsvFileEmbed
+    | CsvInlineEmbed
 )
 
 

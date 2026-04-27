@@ -101,7 +101,7 @@ def test_figure_and_table_counters_independent(tmp_path):
     convert_markdown_text(
         md_text,
         out,
-        options=ConversionOptions(image_base_path=tmp_path),
+        options=ConversionOptions(project_root=tmp_path),
     )
     doc = _open(out)
     captions = [
@@ -153,7 +153,7 @@ def test_missing_image_warns_then_continues(tmp_path):
         convert_markdown_text(
             "![alt](does_not_exist.png)\n\nstill writes",
             out,
-            options=ConversionOptions(image_base_path=tmp_path),
+            options=ConversionOptions(project_root=tmp_path),
         )
     assert out.exists()
 
@@ -166,9 +166,7 @@ def test_strict_missing_image_raises(tmp_path):
         convert_markdown_text(
             "![alt](nope.png)",
             out,
-            options=ConversionOptions(
-                strict_mode=True, image_base_path=tmp_path
-            ),
+            options=ConversionOptions(strict_mode=True, project_root=tmp_path),
         )
 
 

@@ -18,6 +18,10 @@ Date: 2026-04-27
 7. Tables support auto-numbered captions (`Table N: ...`) placed above
    the table, sourced from a preceding paragraph beginning with
    `Table:`.
+8. Embed CSV data as DOCX tables via two fenced-block variants:
+   ` ```csv-file ` (body is a path) and ` ```csv ` (body is literal CSV
+   data). CSV-derived tables share the same `Table N` counter as
+   markdown tables and accept the same preceding-`Table:` caption.
 
 ## Low-Level XML Areas
 
@@ -82,10 +86,11 @@ later as concrete needs appear; do not pre-populate.
    caption paragraph.
 3. `table_caption_prefix: str = "Table"` — label used in the SEQ
    caption paragraph.
-4. `image_base_path: str | Path | None = None` — root for resolving
-   relative image paths. When `None`, resolve relative to the markdown
-   file's directory (for `convert_markdown_file`) or the current working
-   directory (for `convert_markdown_text`).
+4. `project_root: str | Path | None = None` — root for resolving
+   relative paths to external assets (images and CSV files). When
+   `None`, resolve relative to the markdown file's directory (for
+   `convert_markdown_file`) or the current working directory (for
+   `convert_markdown_text`).
 
 ## Project Structure
 
@@ -168,7 +173,7 @@ Deferred:
 Supported:
 
 1. Markdown image syntax `![alt](path "optional title")`.
-2. Local relative paths (resolved per `image_base_path` rules) and
+2. Local relative paths (resolved per `project_root` rules) and
    absolute paths.
 3. Embedded picture followed immediately by a Caption-styled paragraph
    `Figure N: <alt>` using a `SEQ Figure` field.
@@ -183,6 +188,66 @@ Deferred / non-goals for v1:
 2. Sizing controls beyond the image's intrinsic DPI/size.
 3. Floating/anchored images and text wrapping.
 4. SVG and other formats unsupported by `python-docx.add_picture`.
+
+## CSV Embedding
+
+Two fenced-block variants drop CSV data into the document as a DOCX
+table.
+
+### Syntax
+
+File-backed embed:
+
+````markdown
+```csv-file
+data/quarterly.csv
+```
+````
+
+Inline CSV literal:
+
+````markdown
+```csv
+region,q1,q2
+EMEA,1,2
+APAC,3,4
+```
+````
+
+Either form accepts a `no-header` flag on the info string to suppress
+header-row treatment:
+
+````markdown
+```csv-file no-header
+data/raw.csv
+```
+````
+
+### Behavior
+
+1. Parser intercepts `fence` tokens whose info string starts with
+   `csv-file` or `csv` and emits `CsvFileEmbed` / `CsvInlineEmbed`
+   model nodes (in place of `CodeBlock`).
+2. CSV-derived tables share the same `Table N` counter as native
+   markdown tables.
+3. A preceding paragraph beginning with `Table:` attaches as a caption
+   to the next CSV embed, identical to native tables.
+4. CSV cells render as plain text; no markdown is parsed inside them.
+5. Default delimiter detection uses `csv.Sniffer`; encoding is UTF-8.
+   Per-fence overrides are deferred.
+6. File path is resolved per `project_root` rules. Missing files warn
+   in normal mode, raise `RenderError` in `strict_mode`. Decode
+   failures behave the same.
+7. With `no-header`, the table has no header row (no bolded first
+   row); all rows go to the body.
+8. Empty CSVs produce no output (warn).
+
+### Deferred
+
+1. Per-fence `delimiter=` / `encoding=` overrides.
+2. Numeric formatting / locale-aware number rendering.
+3. Cell-level styling sourced from CSV (e.g., colored cells).
+4. Streaming/very-large CSVs — v1 reads the whole file.
 
 ## Default Template Strategy
 

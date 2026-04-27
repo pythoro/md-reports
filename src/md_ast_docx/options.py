@@ -11,7 +11,7 @@ class ConversionOptions:
     """Knobs controlling Markdown to DOCX conversion.
 
     Attributes:
-        strict_mode: When True, unsupported constructs, missing images,
+        strict_mode: When True, unsupported constructs, missing assets,
             and link/caption failures raise instead of warning.
         figure_caption_prefix: Label used before the SEQ counter in
             figure captions (default ``Figure``).
@@ -19,13 +19,14 @@ class ConversionOptions:
             table captions (default ``Table``). Also recognised as the
             leading marker on a paragraph that supplies a table caption
             in markdown source.
-        image_base_path: Root for resolving relative image paths. When
-            None, paths resolve against the markdown file's directory
-            (for ``convert_markdown_file``) or the current working
-            directory (for ``convert_markdown_text``).
+        project_root: Root for resolving relative paths to external
+            assets (images and CSV files). When None, paths resolve
+            against the markdown file's directory (for
+            ``convert_markdown_file``) or the current working directory
+            (for ``convert_markdown_text``).
     """
 
     strict_mode: bool = False
     figure_caption_prefix: str = "Figure"
     table_caption_prefix: str = "Table"
-    image_base_path: str | Path | None = None
+    project_root: str | Path | None = None

@@ -19,6 +19,8 @@ from md_ast_docx.model import (
     BlockQuote,
     BulletList,
     CodeBlock,
+    CsvFileEmbed,
+    CsvInlineEmbed,
     Document,
     Emphasis,
     Heading,
@@ -78,8 +80,7 @@ def _parse_blocks(
             blocks.append(blk)
             i += 3
         elif t == "fence":
-            lang = (tok.info or "").strip() or None
-            blocks.append(CodeBlock(text=tok.content, language=lang))
+            blocks.append(_make_fence_block(tok))
             i += 1
         elif t == "code_block":
             blocks.append(CodeBlock(text=tok.content, language=None))
@@ -119,6 +120,36 @@ def _parse_blocks(
         else:
             i += 1
     return blocks, i
+
+
+def _make_fence_block(tok: Token) -> Block:
+    """Map a markdown-it ``fence`` token to a model block.
+
+    Recognised info-string kinds:
+      * ``csv-file``  — body is a single path; emits ``CsvFileEmbed``
+      * ``csv``       — body is literal CSV; emits ``CsvInlineEmbed``
+      * anything else — emits ``CodeBlock``
+
+    Both CSV kinds accept a ``no-header`` flag elsewhere in the info
+    string.
+    """
+    info = (tok.info or "").strip()
+    if not info:
+        return CodeBlock(text=tok.content, language=None)
+    parts = info.split()
+    kind = parts[0]
+    flags = set(parts[1:])
+    if kind == "csv-file":
+        return CsvFileEmbed(
+            path=tok.content.strip(),
+            has_header="no-header" not in flags,
+        )
+    if kind == "csv":
+        return CsvInlineEmbed(
+            data=tok.content,
+            has_header="no-header" not in flags,
+        )
+    return CodeBlock(text=tok.content, language=info or None)
 
 
 def _find_matching(tokens: list[Token], start: int, close_type: str) -> int:
@@ -306,7 +337,7 @@ def _apply_table_captions(
     prefix = opts.table_caption_prefix
     out: list[Block] = []
     for blk in blocks:
-        if isinstance(blk, Table) and out:
+        if isinstance(blk, (Table, CsvFileEmbed, CsvInlineEmbed)) and out:
             cap = _extract_table_caption(out[-1], prefix)
             if cap is not None:
                 out.pop()

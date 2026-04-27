@@ -46,6 +46,8 @@ Block elements:
 - Paragraphs, block quotes, fenced code blocks
 - Bullet and ordered lists (with nesting)
 - Standard markdown tables (header + body rows, alignment markers)
+- CSV embedding via fenced blocks — both file-backed and inline
+  literal data
 - Embedded images (`![alt](path)`) as figures with auto-numbered
   captions
 
@@ -84,16 +86,56 @@ The caption is emitted above the table as
 table counters are independent. The prefix is configurable via
 `ConversionOptions.table_caption_prefix`.
 
+### CSV embedding
+
+Two fenced-block variants render CSV data as a DOCX table.
+
+**From a file** — the body is a single path resolved against
+`project_root` (or the markdown file's directory):
+
+````markdown
+Table: Quarterly revenue.
+
+```csv-file
+data/quarterly.csv
+```
+````
+
+**Inline** — the body is the CSV literal itself:
+
+````markdown
+```csv
+region,q1,q2
+EMEA,1,2
+APAC,3,4
+```
+````
+
+Either form accepts a `no-header` flag on the info string to suppress
+header-row treatment (no row gets bolded; all rows are body):
+
+````markdown
+```csv-file no-header
+data/raw.csv
+```
+````
+
+CSV-derived tables share the same `Table N` counter as native markdown
+tables, accept the same preceding-`Table:` caption, and use the
+`Table Grid` style. The delimiter is auto-detected via `csv.Sniffer`
+(falls back to comma); encoding is UTF-8.
+
 ## Options
 
 ```python
 from md_ast_docx import ConversionOptions
 
 ConversionOptions(
-    strict_mode=False,          # raise instead of warn on unsupported
+    strict_mode=False,          # raise instead of warn on issues
     figure_caption_prefix="Figure",
     table_caption_prefix="Table",
-    image_base_path=None,       # root for resolving relative images
+    project_root=None,          # root for resolving relative paths
+                                # to images and CSV files
 )
 ```
 
@@ -124,6 +166,8 @@ missing):
   files.
 - Cell merges (`rowspan`/`colspan`) and nested tables are not
   supported.
+- CSV embedding has no per-fence delimiter/encoding overrides yet
+  (UTF-8 + `csv.Sniffer` only).
 - `SEQ` field numbers display correctly in Word once fields update
   (typically on print or pressing `F9`); the file is written with a
   pre-computed display value so first-open looks right too.
