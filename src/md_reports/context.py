@@ -28,7 +28,7 @@ from jinja2 import (
     Undefined,
 )
 
-from md_ast_docx.errors import ValidationError
+from md_reports.errors import ValidationError
 
 
 def _to_csv_filter(value: Any, **kwargs: Any) -> str:

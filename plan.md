@@ -1,4 +1,4 @@
-# md-ast-docx Implementation Plan (API-first)
+# md-reports Implementation Plan (API-first)
 
 Date: 2026-04-27
 
@@ -99,14 +99,14 @@ later as concrete needs appear; do not pre-populate.
 
 ## Project Structure
 
-- `src/md_ast_docx/api.py` (public conversion entry points)
-- `src/md_ast_docx/options.py` (typed config/dataclass)
-- `src/md_ast_docx/model.py` (normalized document model)
-- `src/md_ast_docx/parser.py` (markdown-it-py parsing and normalization)
-- `src/md_ast_docx/renderer.py` (model to python-docx rendering)
-- `src/md_ast_docx/template.py` (template loading, default template resolution)
-- `src/md_ast_docx/errors.py` (custom exception types)
-- `src/md_ast_docx/resources/default_template.docx` (packaged default template)
+- `src/md_reports/api.py` (public conversion entry points)
+- `src/md_reports/options.py` (typed config/dataclass)
+- `src/md_reports/model.py` (normalized document model)
+- `src/md_reports/parser.py` (markdown-it-py parsing and normalization)
+- `src/md_reports/renderer.py` (model to python-docx rendering)
+- `src/md_reports/template.py` (template loading, default template resolution)
+- `src/md_reports/errors.py` (custom exception types)
+- `src/md_reports/resources/default_template.docx` (packaged default template)
 - `tests/` (unit + integration tests)
 
 ## Dependencies
@@ -286,7 +286,7 @@ data, captions, link URLs).
 
 ### Implementation
 
-* New module ``md_ast_docx.context`` holding ``apply_context()`` and
+* New module ``md_reports.context`` holding ``apply_context()`` and
   ``_KeepUndefined``.
 * ``parser.parse()`` calls ``apply_context()`` when a context is
   provided.
@@ -431,7 +431,7 @@ Integration tests:
 
 ## Engineering Conventions
 
-1. `src` layout under `src/md_ast_docx/`.
+1. `src` layout under `src/md_reports/`.
 2. Strong type hints across the public API and core modules.
 3. `ruff` line length 79, used for linting and formatting.
 4. Keep modules small; document XML concerns isolated to renderer

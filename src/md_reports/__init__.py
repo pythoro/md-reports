@@ -1,4 +1,4 @@
-"""md_ast_docx — Markdown to document conversion with pluggable renderers.
+"""md_reports — Markdown to document conversion with pluggable renderers.
 
 Public API:
     convert_markdown_text(markdown_text, output_path, *, renderer,
@@ -24,21 +24,21 @@ Errors:
 
 from __future__ import annotations
 
-from md_ast_docx.api import (
+from md_reports.api import (
     MarkdownConverter,
     convert_markdown_file,
     convert_markdown_text,
 )
-from md_ast_docx.errors import (
+from md_reports.errors import (
     MdAstDocxError,
     ParseError,
     RenderError,
     TemplateError,
     ValidationError,
 )
-from md_ast_docx.options import ConversionOptions
-from md_ast_docx.renderers.base import BaseRenderer, RenderContext
-from md_ast_docx.renderers.docx import (
+from md_reports.options import ConversionOptions
+from md_reports.renderers.base import BaseRenderer, RenderContext
+from md_reports.renderers.docx import (
     DocxRenderer,
     get_default_template_path,
 )

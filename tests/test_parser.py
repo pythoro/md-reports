@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from md_ast_docx.errors import ParseError
-from md_ast_docx.model import (
+from md_reports.errors import ParseError
+from md_reports.model import (
     BlockQuote,
     BulletList,
     CodeBlock,
@@ -21,8 +21,8 @@ from md_ast_docx.model import (
     Table,
     Text,
 )
-from md_ast_docx.options import ConversionOptions
-from md_ast_docx.parser import parse
+from md_reports.options import ConversionOptions
+from md_reports.parser import parse
 
 
 def test_headings_levels_1_to_6():

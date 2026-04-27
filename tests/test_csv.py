@@ -6,19 +6,19 @@ import pytest
 from docx import Document as DocxDocument
 from docx.oxml.ns import qn
 
-from md_ast_docx import (
+from md_reports import (
     ConversionOptions,
     convert_markdown_text,
 )
-from md_ast_docx.errors import RenderError
-from md_ast_docx.model import (
+from md_reports.errors import RenderError
+from md_reports.model import (
     CodeBlock,
     CsvFileEmbed,
     CsvInlineEmbed,
     Table,
     Text,
 )
-from md_ast_docx.parser import parse
+from md_reports.parser import parse
 
 # --- parser -----------------------------------------------------------
 
@@ -196,7 +196,7 @@ def test_project_root_overrides_markdown_dir(tmp_path):
     csv.write_text("h\n1\n", encoding="utf-8")
     md_path.write_text("```csv-file\ndata.csv\n```\n", encoding="utf-8")
     out = tmp_path / "rooted.docx"
-    from md_ast_docx import convert_markdown_file
+    from md_reports import convert_markdown_file
 
     convert_markdown_file(
         md_path,

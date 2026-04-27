@@ -13,7 +13,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 from docx.text.paragraph import Paragraph as DocxParagraph
 
-from md_ast_docx.model import (
+from md_reports.model import (
     Block,
     BlockQuote,
     BulletList,
@@ -37,9 +37,9 @@ from md_ast_docx.model import (
     TableCell,
     Text,
 )
-from md_ast_docx.options import ConversionOptions
-from md_ast_docx.renderers.base import BaseRenderer, RenderContext
-from md_ast_docx.renderers.docx.template import (
+from md_reports.options import ConversionOptions
+from md_reports.renderers.base import BaseRenderer, RenderContext
+from md_reports.renderers.docx.template import (
     load_docx_template,
     style_exists,
 )

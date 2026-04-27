@@ -8,7 +8,7 @@ import pytest
 from docx import Document as DocxDocument
 from docx.oxml.ns import qn
 
-from md_ast_docx import (
+from md_reports import (
     ConversionOptions,
     MarkdownConverter,
     convert_markdown_file,
@@ -159,7 +159,7 @@ def test_missing_image_warns_then_continues(tmp_path):
 
 
 def test_strict_missing_image_raises(tmp_path):
-    from md_ast_docx.errors import RenderError
+    from md_reports.errors import RenderError
 
     out = tmp_path / "strict.docx"
     with pytest.raises(RenderError):

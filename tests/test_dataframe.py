@@ -6,8 +6,8 @@ import pytest
 from docx import Document as DocxDocument
 from docx.oxml.ns import qn
 
-from md_ast_docx import ConversionOptions, convert_markdown_text
-from md_ast_docx.context import apply_context
+from md_reports import ConversionOptions, convert_markdown_text
+from md_reports.context import apply_context
 
 
 class _PandasLikeDF:
@@ -93,7 +93,7 @@ def test_filter_skips_index_when_method_does_not_accept_it():
 
 
 def test_filter_rejects_non_dataframe():
-    from md_ast_docx.errors import ValidationError
+    from md_reports.errors import ValidationError
 
     # Strict mode bubbles the underlying TypeError as ValidationError
     # via the apply_context error path.
@@ -182,7 +182,7 @@ def test_dataframe_shares_table_counter(tmp_path):
 
 
 def test_dataframe_strict_missing_method_raises(tmp_path):
-    from md_ast_docx.errors import ValidationError
+    from md_reports.errors import ValidationError
 
     out = tmp_path / "bad.docx"
     with pytest.raises(ValidationError):

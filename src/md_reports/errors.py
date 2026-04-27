@@ -1,10 +1,10 @@
-"""Exception types raised by md_ast_docx."""
+"""Exception types raised by md_reports."""
 
 from __future__ import annotations
 
 
 class MdAstDocxError(Exception):
-    """Base class for all md_ast_docx exceptions."""
+    """Base class for all md_reports exceptions."""
 
 
 class TemplateError(MdAstDocxError):

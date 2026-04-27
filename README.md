@@ -1,4 +1,4 @@
-# md-ast-docx
+# md-reports
 
 Convert Markdown to DOCX using a configurable Word template. Designed
 for embedding in Python scripts (no CLI).
@@ -6,13 +6,13 @@ for embedding in Python scripts (no CLI).
 ## Install
 
 ```bash
-uv add md-ast-docx
+uv add md-reports
 ```
 
 ## Quick start
 
 ```python
-from md_ast_docx import convert_markdown_text, convert_markdown_file
+from md_reports import convert_markdown_text, convert_markdown_file
 
 # from a string
 convert_markdown_text(
@@ -35,7 +35,7 @@ Reusable converter (avoids reloading the template each call; supports
 a `default_context` shared across all conversions):
 
 ```python
-from md_ast_docx import (
+from md_reports import (
     ConversionOptions, DocxRenderer, MarkdownConverter,
 )
 
@@ -88,7 +88,7 @@ on print or `F9`).
 
 ### Table captions
 
-Markdown has no native table caption syntax. `md-ast-docx` consumes the
+Markdown has no native table caption syntax. `md-reports` consumes the
 paragraph immediately preceding a table when it begins with `Table:`:
 
 ```markdown
@@ -170,7 +170,7 @@ newline. Captions, the shared `Table N` counter, and the `no-header`
 flag all work the same as for any `csv` fence.
 
 The filter is duck-typed on `.to_csv()` — pandas is **not** a
-dependency of `md-ast-docx`. Any object with a compatible `.to_csv()`
+dependency of `md-reports`. Any object with a compatible `.to_csv()`
 method works (your script provides it). Pass any kwargs supported by
 the underlying method, e.g.:
 
@@ -233,7 +233,7 @@ keys win).
 ## Options
 
 ```python
-from md_ast_docx import ConversionOptions
+from md_reports import ConversionOptions
 
 ConversionOptions(
     strict_mode=False,          # raise instead of warn on issues
@@ -251,7 +251,7 @@ renderer at all), a packaged default DOCX template is used. To
 inspect or copy the default:
 
 ```python
-from md_ast_docx import get_default_template_path
+from md_reports import get_default_template_path
 
 print(get_default_template_path())
 ```

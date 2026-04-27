@@ -2,7 +2,7 @@
 
 Uses markdown-it-py with the GFM table extension enabled. Tokens are
 walked recursively and assembled into the model defined in
-:mod:`md_ast_docx.model`.
+:mod:`md_reports.model`.
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ from typing import Any
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
-from md_ast_docx.context import apply_context
-from md_ast_docx.errors import ParseError
-from md_ast_docx.model import (
+from md_reports.context import apply_context
+from md_reports.errors import ParseError
+from md_reports.model import (
     Block,
     BlockQuote,
     BulletList,
@@ -41,7 +41,7 @@ from md_ast_docx.model import (
     TableRow,
     Text,
 )
-from md_ast_docx.options import ConversionOptions
+from md_reports.options import ConversionOptions
 
 _HTML_LINK_OPEN = re.compile(
     r'<a\s+[^>]*href\s*=\s*"([^"]*)"[^>]*>',
@@ -58,7 +58,7 @@ def parse(
     """Parse markdown text into a :class:`Document`.
 
     If ``context`` is provided, the markdown is first rendered as a
-    Jinja2 template against it. See :mod:`md_ast_docx.context` for
+    Jinja2 template against it. See :mod:`md_reports.context` for
     behavior on undefined variables and template errors.
     """
     opts = options or ConversionOptions()

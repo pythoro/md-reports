@@ -20,9 +20,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
-from md_ast_docx.errors import RenderError
-from md_ast_docx.model import Document
-from md_ast_docx.options import ConversionOptions
+from md_reports.errors import RenderError
+from md_reports.model import Document
+from md_reports.options import ConversionOptions
 
 
 @dataclass(kw_only=True)

@@ -6,14 +6,14 @@ import pytest
 from docx import Document as DocxDocument
 from docx.oxml.ns import qn
 
-from md_ast_docx import (
+from md_reports import (
     ConversionOptions,
     MarkdownConverter,
     convert_markdown_text,
 )
-from md_ast_docx.context import apply_context
-from md_ast_docx.errors import ValidationError
-from md_ast_docx.parser import parse
+from md_reports.context import apply_context
+from md_reports.errors import ValidationError
+from md_reports.parser import parse
 
 # --- apply_context unit tests ----------------------------------------
 
@@ -239,7 +239,7 @@ def test_parse_function_accepts_context():
     doc = parse("# {{ title }}", context={"title": "Hi"})
     heading = doc.blocks[0]
     # the heading's first inline child should be Text("Hi")
-    from md_ast_docx.model import Text
+    from md_reports.model import Text
 
     assert isinstance(heading.children[0], Text)
     assert heading.children[0].text == "Hi"

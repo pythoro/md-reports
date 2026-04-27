@@ -1,7 +1,7 @@
 [project]
-name = "md-ast-docx"
+name = "md-reports"
 version = "0.1.0"
-description = "Convert Markdown to DOCX using a configurable template"
+description = "Render Markdown reports to multiple formats (DOCX, with pluggable renderers)"
 readme = "README.md"
 authors = [
     { name = "pythoro", email = "pythoro@mindquip.com" }

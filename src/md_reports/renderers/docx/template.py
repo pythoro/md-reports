@@ -11,12 +11,12 @@ from pathlib import Path
 from docx import Document as DocxDocument
 from docx.document import Document as DocxDoc
 
-from md_ast_docx.errors import TemplateError
+from md_reports.errors import TemplateError
 
 
 def get_default_template_path() -> Path:
     """Return the filesystem path of the packaged default DOCX template."""
-    ref = resources.files("md_ast_docx.renderers.docx.resources").joinpath(
+    ref = resources.files("md_reports.renderers.docx.resources").joinpath(
         "default_template.docx"
     )
     return Path(str(ref))

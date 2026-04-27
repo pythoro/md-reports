@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from md_ast_docx.errors import TemplateError
-from md_ast_docx.renderers.docx.template import (
+from md_reports.errors import TemplateError
+from md_reports.renderers.docx.template import (
     get_default_template_path,
     load_docx_template,
     style_exists,

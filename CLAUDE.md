@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-md-ast-docx is a Python library that converts Markdown content into DOCX
+md-reports is a Python library that converts Markdown content into DOCX
 files, using a DOCX template for styling.
 
 Primary intent:
@@ -45,14 +45,14 @@ Optional reusable object:
 
 ## Proposed Package Layout
 
-- src/md_ast_docx/api.py
-- src/md_ast_docx/options.py
-- src/md_ast_docx/model.py
-- src/md_ast_docx/parser.py
-- src/md_ast_docx/renderer.py
-- src/md_ast_docx/template.py
-- src/md_ast_docx/errors.py
-- src/md_ast_docx/resources/default_template.docx
+- src/md_reports/api.py
+- src/md_reports/options.py
+- src/md_reports/model.py
+- src/md_reports/parser.py
+- src/md_reports/renderer.py
+- src/md_reports/template.py
+- src/md_reports/errors.py
+- src/md_reports/resources/default_template.docx
 
 ## Parsing and Rendering Strategy
 

@@ -260,7 +260,7 @@ wheels = [
 ]
 
 [[package]]
-name = "md-ast-docx"
+name = "md-reports"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from md_ast_docx.errors import ValidationError
-from md_ast_docx.options import ConversionOptions
-from md_ast_docx.parser import parse
-from md_ast_docx.renderers.base import BaseRenderer
-from md_ast_docx.renderers.docx import DocxRenderer
+from md_reports.errors import ValidationError
+from md_reports.options import ConversionOptions
+from md_reports.parser import parse
+from md_reports.renderers.base import BaseRenderer
+from md_reports.renderers.docx import DocxRenderer
 
 
 def convert_markdown_text(
