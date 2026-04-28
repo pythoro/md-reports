@@ -27,6 +27,7 @@ from jinja2 import (
     TemplateError,
     Undefined,
 )
+from jinja2.sandbox import SandboxedEnvironment
 
 from md_reports.errors import ValidationError
 
@@ -88,15 +89,21 @@ def apply_context(
     text: str,
     context: dict[str, Any] | None,
     strict: bool,
+    sandboxed: bool = False,
 ) -> str:
     """Render ``text`` as a Jinja2 template against ``context``.
 
     Returns the rendered text. If ``context`` is None or empty, returns
     the input unchanged. See module docstring for error behavior.
+
+    When ``sandboxed`` is True, a ``SandboxedEnvironment`` is used to
+    block access to most attributes/built-ins on context values. Enable
+    this when the markdown source is not fully trusted.
     """
     if not context:
         return text
-    env = Environment(
+    env_cls = SandboxedEnvironment if sandboxed else Environment
+    env = env_cls(
         undefined=StrictUndefined if strict else _KeepUndefined,
         keep_trailing_newline=True,
         autoescape=False,

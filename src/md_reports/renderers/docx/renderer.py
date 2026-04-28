@@ -599,6 +599,20 @@ class DocxRenderer(BaseRenderer):
                 "keeping the first occurrence"
             )
             return
+        # Distinct user labels can collide once non-alphanumeric
+        # characters are sanitised for Word's bookmark-name rules
+        # (e.g. ``tab-x`` and ``tab_x`` both become ``_Ref_tab_x``).
+        # That would emit duplicate bookmarks and break references.
+        bookmark = _bookmark_name(label)
+        for existing_label in ctx.label_registry:
+            if _bookmark_name(existing_label) == bookmark:
+                self._warn_or_raise(
+                    f"Cross-reference label {label!r} collides with "
+                    f"existing label {existing_label!r} after "
+                    f"sanitisation to bookmark name {bookmark!r}; "
+                    "keeping the first occurrence"
+                )
+                return
         ctx.label_registry[label] = (prefix, number)
 
     def _open_bookmark(

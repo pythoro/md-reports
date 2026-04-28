@@ -1,7 +1,7 @@
 # md-reports
 
-Convert Markdown to DOCX using a configurable Word template. Designed
-for embedding in Python scripts (no CLI).
+Convert Markdown to DOCX using a configurable Word template. Designed for
+embedding in Python scripts (no CLI). Extensible to other output formats.
 
 ## Install
 
@@ -398,6 +398,67 @@ All exceptions inherit from `MdAstDocxError`. Specific types:
 - `ParseError` — markdown could not be parsed
 - `RenderError` — DOCX rendering failed
 - `ValidationError` — bad input arguments
+
+## Security model
+
+By default, `md-reports` treats the markdown source as **code-equivalent**
+— same trust as the script that calls the library. Two consequences
+follow that you should know about:
+
+1. **Jinja2 substitution runs in a non-sandboxed environment.** Any
+   `{{ ... }}` expression in the markdown can reach into context
+   values' attributes (e.g. `{{ obj.__class__... }}`). Useful for
+   things like `{{ df | to_csv }}`, dangerous if the markdown is
+   untrusted.
+2. **Asset paths are not confined.** Image and CSV references
+   (`![](path)`, `csv-file` blocks) accept absolute paths and `..`
+   traversals. The library will read whatever the process can read
+   and embed it into the output.
+
+This is fine for the typical use case (developer-authored markdown,
+script-supplied context). If you ever pass user-controlled markdown
+into the library — e.g. a CMS, a comment field, or a user-uploaded
+file — turn on the two hardening flags:
+
+```python
+from md_reports import ConversionOptions, convert_markdown_text
+
+convert_markdown_text(
+    untrusted_markdown,
+    "out.docx",
+    context={"title": "Report"},
+    options=ConversionOptions(
+        sandboxed_context=True,   # use Jinja2's SandboxedEnvironment
+        confine_assets=True,      # reject paths outside project_root
+        project_root="/srv/uploads/work_dir",
+    ),
+)
+```
+
+`sandboxed_context=True` swaps the Jinja2 environment for
+`jinja2.sandbox.SandboxedEnvironment`, blocking attribute and
+built-in access in template expressions. Note this can break filters
+that rely on duck-typed attribute access (the built-in `to_csv`
+filter still works because it uses `hasattr`/`getattr`, not
+expression-level attribute access). Verify your templates against the
+sandboxed environment before rolling it out.
+
+`confine_assets=True` enforces that every resolved image and CSV path
+lies under the asset base — `project_root` if set, otherwise the
+markdown file's directory. Absolute paths and `..` traversals that
+escape the base are rejected (warned, or raised under `strict_mode`).
+
+Also note:
+
+- **Templates** (`template_path=`) are loaded by `python-docx` /
+  `lxml` and are otherwise opaque to md-reports. Treat templates as
+  trusted: don't load templates from untrusted sources without
+  reviewing them first.
+- **Hyperlink schemes** are limited to `http://`, `https://`, and
+  `mailto:`; other schemes (including `javascript:`, `file:`,
+  `data:`) fall back to plain text.
+- **Remote image fetching** is not supported; `http(s)://` image
+  paths are explicitly rejected.
 
 ## Development
 

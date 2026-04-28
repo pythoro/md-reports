@@ -79,7 +79,12 @@ def parse(
     """
     opts = options or ConversionOptions()
     if context:
-        text = apply_context(text, context, opts.strict_mode)
+        text = apply_context(
+            text,
+            context,
+            opts.strict_mode,
+            sandboxed=opts.sandboxed_context,
+        )
     md = MarkdownIt("commonmark").enable("table")
     tokens = md.parse(text)
     blocks, _ = _parse_blocks(tokens, 0, len(tokens), opts)

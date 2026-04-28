@@ -24,9 +24,25 @@ class ConversionOptions:
             against the markdown file's directory (for
             ``convert_markdown_file``) or the current working directory
             (for ``convert_markdown_text``).
+        sandboxed_context: When True, the Jinja2 substitution step uses
+            :class:`jinja2.sandbox.SandboxedEnvironment`, blocking
+            access to most attributes and built-ins. Enable when the
+            markdown source is not fully trusted. Note: sandboxing
+            blocks dunder/attribute access in expressions, which can
+            disable duck-typed filter calls like ``{{ df | to_csv }}``
+            depending on what attributes the filter touches.
+        confine_assets: When True, image and CSV asset paths must
+            resolve to a location *under* the asset base
+            (``project_root`` if set, otherwise the markdown file's
+            directory). Absolute paths and ``..`` traversals that
+            escape the base are rejected (warned, or raised under
+            ``strict_mode``). Enable when the markdown source is not
+            fully trusted.
     """
 
     strict_mode: bool = False
     figure_caption_prefix: str = "Figure"
     table_caption_prefix: str = "Table"
     project_root: str | Path | None = None
+    sandboxed_context: bool = False
+    confine_assets: bool = False
