@@ -1,6 +1,6 @@
 [project]
 name = "md-reports"
-version = "0.1.0"
+version = "0.1.1"
 description = "Render Markdown reports to multiple formats (DOCX, with pluggable renderers)"
 readme = "README.md"
 authors = [
