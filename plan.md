@@ -55,6 +55,25 @@ does not expose these directly, so the renderer emits a complex field
 display / `w:fldChar` end) inside a Caption-styled paragraph. Numbering
 restarts per document and is independent for figures vs tables.
 
+### Cross-references
+
+Users attach a label by appending `{#label}` to an image alt text or a
+`Table:` caption. The parser strips the marker and stores it on the
+model node (`ImageBlock.label`, `Table.label`,
+`CsvFileEmbed.label`, `CsvInlineEmbed.label`,
+`InlineImage.label`). References are written as ordinary markdown links
+with `#label` hrefs.
+
+The renderer does a pre-walk over the document to build a label
+registry mapping `label -> (prefix, number)` so forward references
+resolve. Each labelled caption gets a `w:bookmarkStart` /
+`w:bookmarkEnd` pair around the SEQ field run, named `_Ref_<label>`
+(non-alphanumeric characters in the user label are sanitised to
+underscores). Each `[text](#label)` becomes a Word `REF` complex field
+referencing the bookmark; empty link text auto-fills with
+`"<Prefix> <Number>"` from the registry. Unknown labels degrade to
+plain text with a warning (or raise under `strict_mode`).
+
 ### Image embedding
 
 Use `python-docx`'s `add_picture` for the image part/relationship, then

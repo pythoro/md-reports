@@ -17,7 +17,7 @@ import csv
 import io
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from md_reports.errors import RenderError
@@ -32,11 +32,16 @@ class RenderContext:
     Subclasses may extend this with format-specific fields (e.g. a
     DOCX document handle). Use ``kw_only`` so subclasses can add
     required fields after the base's defaulted ones.
+
+    ``label_registry`` maps user-defined labels (from ``{#label}``
+    markers on figures and tables) to ``(prefix, number)`` so
+    cross-references can resolve forward and backward.
     """
 
     markdown_dir: Path | None = None
     figure_counter: int = 0
     table_counter: int = 0
+    label_registry: dict[str, tuple[str, int]] = field(default_factory=dict)
 
 
 class BaseRenderer(ABC):

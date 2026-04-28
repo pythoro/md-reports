@@ -257,6 +257,103 @@ def test_caption_falls_back_to_inline_italic_when_style_missing(tmp_path):
     assert any(r.italic is True for r in cap.runs)
 
 
+def test_cross_reference_emits_bookmark_and_ref_field(tmp_path):
+    md_text = (
+        "Table: Quarterly numbers {#tab-q}\n\n"
+        "| a |\n|---|\n| 1 |\n\n"
+        "See [Table 1](#tab-q) above.\n"
+    )
+    out = tmp_path / "ref.docx"
+    convert_markdown_text(md_text, out)
+    doc = _open(out)
+
+    # caption has a bookmarkStart / bookmarkEnd
+    cap = next(p for p in doc.paragraphs if p.style.name == "Caption")
+    starts = cap._p.findall(qn("w:bookmarkStart"))
+    ends = cap._p.findall(qn("w:bookmarkEnd"))
+    assert starts and ends
+    assert starts[0].get(qn("w:name")) == "_Ref_tab_q"
+
+    # reference paragraph has a REF field pointing at that bookmark
+    ref_para = next(
+        p
+        for p in doc.paragraphs
+        if "See" in _full_paragraph_text(p) and p.style.name != "Caption"
+    )
+    instr_texts = ref_para._p.findall(f".//{qn('w:instrText')}")
+    joined = "".join(t.text or "" for t in instr_texts)
+    assert "REF" in joined and "_Ref_tab_q" in joined
+    # cached display value matches link text
+    assert "Table 1" in _full_paragraph_text(ref_para)
+
+
+def test_cross_reference_empty_text_auto_fills_from_registry(tmp_path):
+    md_text = (
+        "Table: Sales {#tab-sales}\n\n"
+        "| a |\n|---|\n| 1 |\n\n"
+        "see [](#tab-sales) for details\n"
+    )
+    out = tmp_path / "auto.docx"
+    convert_markdown_text(md_text, out)
+    doc = _open(out)
+    ref_para = next(
+        p
+        for p in doc.paragraphs
+        if "see" in _full_paragraph_text(p) and p.style.name != "Caption"
+    )
+    assert "Table 1" in _full_paragraph_text(ref_para)
+
+
+def test_cross_reference_forward_to_later_figure(tmp_path):
+    png = tmp_path / "p.png"
+    png.write_bytes(_one_pixel_png())
+    md_text = (
+        "First, see [Figure 1](#fig-rev) below.\n\n"
+        "![Quarterly revenue {#fig-rev}](p.png)\n"
+    )
+    out = tmp_path / "fwd.docx"
+    convert_markdown_text(
+        md_text,
+        out,
+        options=ConversionOptions(project_root=tmp_path),
+    )
+    doc = _open(out)
+    ref_para = next(
+        p
+        for p in doc.paragraphs
+        if "First" in _full_paragraph_text(p) and p.style.name != "Caption"
+    )
+    instr_texts = ref_para._p.findall(f".//{qn('w:instrText')}")
+    joined = "".join(t.text or "" for t in instr_texts)
+    assert "REF" in joined and "_Ref_fig_rev" in joined
+
+
+def test_unknown_cross_reference_label_warns_and_falls_back(tmp_path):
+    md_text = "see [Figure 1](#missing) for details\n"
+    out = tmp_path / "miss.docx"
+    with pytest.warns(UserWarning):
+        convert_markdown_text(md_text, out)
+    doc = _open(out)
+    para = next(
+        p for p in doc.paragraphs if "see" in _full_paragraph_text(p)
+    )
+    # No REF field emitted
+    instr_texts = para._p.findall(f".//{qn('w:instrText')}")
+    assert not any("REF" in (t.text or "") for t in instr_texts)
+    # Plain text fallback shows the link text
+    assert "Figure 1" in _full_paragraph_text(para)
+
+
+def test_duplicate_cross_reference_label_warns(tmp_path):
+    md_text = (
+        "Table: First {#dup}\n\n| a |\n|---|\n| 1 |\n\n"
+        "Table: Second {#dup}\n\n| a |\n|---|\n| 1 |\n"
+    )
+    out = tmp_path / "dup.docx"
+    with pytest.warns(UserWarning):
+        convert_markdown_text(md_text, out)
+
+
 def _one_pixel_png() -> bytes:
     """A minimal valid 1x1 PNG."""
     import base64

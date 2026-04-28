@@ -49,6 +49,21 @@ _HTML_LINK_OPEN = re.compile(
 )
 _HTML_LINK_CLOSE = re.compile(r"</a\s*>", re.IGNORECASE)
 
+_TRAILING_LABEL = re.compile(r"\s*\{#([^}\s]+)\}\s*$")
+
+
+def _extract_trailing_label(text: str) -> tuple[str, str | None]:
+    """Strip a trailing ``{#label}`` token from ``text``.
+
+    Returns ``(stripped_text, label)``. ``label`` is ``None`` when no
+    trailing token is present. Surrounding whitespace is consumed so a
+    caption like ``"Sales data {#tab-sales}"`` becomes ``"Sales data"``.
+    """
+    m = _TRAILING_LABEL.search(text)
+    if not m:
+        return text, None
+    return text[: m.start()].rstrip(), m.group(1)
+
 
 def parse(
     text: str,
@@ -287,11 +302,13 @@ def _parse_inlines(
             alt = "".join(
                 c.content for c in (tok.children or []) if c.type == "text"
             )
+            alt, label = _extract_trailing_label(alt)
             stack[-1].append(
                 InlineImage(
                     src=tok.attrGet("src") or "",
                     alt=alt,
                     title=tok.attrGet("title"),
+                    label=label,
                 )
             )
         elif t == "html_inline":
@@ -341,7 +358,12 @@ def _maybe_block_image(
             return None
     if image is None:
         return None
-    return ImageBlock(src=image.src, alt=image.alt, title=image.title)
+    return ImageBlock(
+        src=image.src,
+        alt=image.alt,
+        title=image.title,
+        label=image.label,
+    )
 
 
 def _apply_table_captions(
@@ -354,7 +376,10 @@ def _apply_table_captions(
             cap = _extract_table_caption(out[-1], prefix)
             if cap is not None:
                 out.pop()
+                cap, label = _strip_caption_label(cap)
                 blk.caption = cap
+                if label is not None:
+                    blk.label = label
         if isinstance(blk, BlockQuote):
             blk.blocks = _apply_table_captions(blk.blocks, opts)
         elif isinstance(blk, (BulletList, OrderedList)):
@@ -362,6 +387,29 @@ def _apply_table_captions(
                 item.blocks = _apply_table_captions(item.blocks, opts)
         out.append(blk)
     return out
+
+
+def _strip_caption_label(
+    inlines: list[Inline],
+) -> tuple[list[Inline], str | None]:
+    """Pull a trailing ``{#label}`` token from a caption inline list.
+
+    The label must be in the final ``Text`` node. If found it is removed
+    (along with any leading whitespace it had) and returned alongside
+    the cleaned inline list. Trailing empty ``Text`` nodes are dropped.
+    """
+    if not inlines:
+        return inlines, None
+    last = inlines[-1]
+    if not isinstance(last, Text):
+        return inlines, None
+    stripped, label = _extract_trailing_label(last.text)
+    if label is None:
+        return inlines, None
+    new_inlines = list(inlines[:-1])
+    if stripped:
+        new_inlines.append(Text(stripped))
+    return new_inlines, label
 
 
 def _extract_table_caption(block: Block, prefix: str) -> list[Inline] | None:

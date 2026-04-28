@@ -49,6 +49,7 @@ class InlineImage:
     src: str
     alt: str = ""
     title: str | None = None
+    label: str | None = None
 
 
 @dataclass
@@ -116,6 +117,7 @@ class Table:
     body: list[TableRow] = field(default_factory=list)
     alignments: list[str | None] = field(default_factory=list)
     caption: list[Inline] | None = None
+    label: str | None = None
 
 
 @dataclass
@@ -129,6 +131,7 @@ class ImageBlock:
     src: str
     alt: str = ""
     title: str | None = None
+    label: str | None = None
 
 
 @dataclass
@@ -142,6 +145,7 @@ class CsvFileEmbed:
     path: str
     has_header: bool = True
     caption: list[Inline] | None = None
+    label: str | None = None
 
 
 @dataclass
@@ -155,6 +159,7 @@ class CsvInlineEmbed:
     data: str
     has_header: bool = True
     caption: list[Inline] | None = None
+    label: str | None = None
 
 
 Block = (

@@ -104,6 +104,35 @@ The caption is emitted above the table as
 table counters are independent. The prefix is configurable via
 `ConversionOptions.table_caption_prefix`.
 
+### Cross-references
+
+Attach a label to a figure or table by appending `{#label}` to its alt
+text or caption, then refer to it from anywhere in the document with a
+markdown link whose target is `#label`:
+
+```markdown
+![Quarterly revenue {#fig-revenue}](charts/revenue.png)
+
+Table: Sales by region {#tab-sales}
+
+| Region | Total |
+|--------|------:|
+| EMEA   | 100   |
+
+See [Figure 1](#fig-revenue) and [](#tab-sales) for details.
+```
+
+Each labelled caption is wrapped in a Word bookmark; each `#label` link
+becomes a Word `REF` field pointing at that bookmark. The link text
+becomes the cached display value; an empty link text auto-fills as
+`"<Prefix> <Number>"` (e.g. `Table 1`). Forward references work — the
+parser resolves all labels before rendering. After F9 (or print), Word
+recomputes both the SEQ counters and the REF fields so reordering or
+inserting figures keeps numbering and cross-references in sync.
+
+Unknown `#label` targets degrade to plain text with a warning (or raise
+in `strict_mode`).
+
 ### CSV embedding
 
 Two fenced-block variants render CSV data as a DOCX table.

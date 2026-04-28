@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 import warnings
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from docx.document import Document as DocxDoc
 from docx.oxml import OxmlElement
@@ -50,6 +52,19 @@ _HYPERLINK_REL = (
 )
 _VALID_LINK_SCHEMES = ("http://", "https://", "mailto:")
 
+_BOOKMARK_SAFE = re.compile(r"[^A-Za-z0-9_]")
+
+
+def _bookmark_name(label: str) -> str:
+    """Build a Word-safe bookmark name from a user label.
+
+    Word bookmark names must start with a letter or underscore and may
+    contain only letters, digits, and underscores. Prefix with ``_Ref``
+    (Word's own convention) and sanitise other characters.
+    """
+    safe = _BOOKMARK_SAFE.sub("_", label)
+    return f"_Ref_{safe}"
+
 
 @dataclass
 class _RunFormat:
@@ -70,6 +85,7 @@ class _DocxContext(RenderContext):
     """RenderContext extended with the DOCX document handle."""
 
     doc: DocxDoc
+    bookmark_id_counter: int = 0
 
 
 class DocxRenderer(BaseRenderer):
@@ -97,6 +113,7 @@ class DocxRenderer(BaseRenderer):
     ) -> Path:
         docx_doc = load_docx_template(self.template_path)
         ctx = _DocxContext(markdown_dir=markdown_dir, doc=docx_doc)
+        self._collect_labels(ctx, document.blocks)
         for block in document.blocks:
             self._render_block(ctx, block)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,7 +175,13 @@ class DocxRenderer(BaseRenderer):
         deferred: list[InlineImage] = []
         self._render_inlines(ctx, para, p.children, deferred_images=deferred)
         for img in deferred:
-            self._emit_figure(ctx, img.src, img.alt, after_paragraph=True)
+            self._emit_figure(
+                ctx,
+                img.src,
+                img.alt,
+                after_paragraph=True,
+                label=img.label,
+            )
 
     # --- code block ---------------------------------------------------
 
@@ -253,6 +276,7 @@ class DocxRenderer(BaseRenderer):
                 self.options.table_caption_prefix,
                 ctx.table_counter,
                 t.caption,
+                label=t.label,
             )
         table_style = (
             "Table Grid" if style_exists(ctx.doc, "Table Grid") else None
@@ -306,7 +330,13 @@ class DocxRenderer(BaseRenderer):
     # --- images / figure captions -------------------------------------
 
     def _render_image_block(self, ctx: _DocxContext, ib: ImageBlock) -> None:
-        self._emit_figure(ctx, ib.src, ib.alt, after_paragraph=False)
+        self._emit_figure(
+            ctx,
+            ib.src,
+            ib.alt,
+            after_paragraph=False,
+            label=ib.label,
+        )
 
     def _emit_figure(
         self,
@@ -314,6 +344,7 @@ class DocxRenderer(BaseRenderer):
         src: str,
         alt: str,
         after_paragraph: bool,
+        label: str | None = None,
     ) -> None:
         path = self._resolve_asset_path(ctx, src, kind="image")
         if path is None:
@@ -336,6 +367,7 @@ class DocxRenderer(BaseRenderer):
             self.options.figure_caption_prefix,
             ctx.figure_counter,
             cap_inlines,
+            label=label,
         )
 
     # --- CSV embedding -----------------------------------------------
@@ -353,14 +385,14 @@ class DocxRenderer(BaseRenderer):
         if not rows:
             self._warn_or_raise(f"CSV is empty: {path}")
             return
-        self._emit_csv_table(ctx, rows, c.has_header, c.caption)
+        self._emit_csv_table(ctx, rows, c.has_header, c.caption, c.label)
 
     def _render_csv_inline(self, ctx: _DocxContext, c: CsvInlineEmbed) -> None:
         rows = self._parse_csv_text(c.data)
         if not rows:
             self._warn_or_raise("Inline CSV block is empty")
             return
-        self._emit_csv_table(ctx, rows, c.has_header, c.caption)
+        self._emit_csv_table(ctx, rows, c.has_header, c.caption, c.label)
 
     def _emit_csv_table(
         self,
@@ -368,6 +400,7 @@ class DocxRenderer(BaseRenderer):
         rows: list[list[str]],
         has_header: bool,
         caption: list[Inline] | None,
+        label: str | None = None,
     ) -> None:
         header = rows[0] if has_header else None
         body = rows[1:] if has_header else rows
@@ -383,6 +416,7 @@ class DocxRenderer(BaseRenderer):
                 self.options.table_caption_prefix,
                 ctx.table_counter,
                 caption,
+                label=label,
             )
         n_rows = (1 if header is not None else 0) + len(body)
         if n_rows == 0:
@@ -411,14 +445,20 @@ class DocxRenderer(BaseRenderer):
         prefix: str,
         number: int,
         text_inlines: list[Inline],
+        label: str | None = None,
     ) -> None:
         has_caption_style = style_exists(ctx.doc, "Caption")
         style = "Caption" if has_caption_style else "Normal"
         para = ctx.doc.add_paragraph(style=style)
-        label = para.add_run(f"{prefix} ")
+        bookmark_id: int | None = None
+        if label:
+            bookmark_id = self._open_bookmark(ctx, para, _bookmark_name(label))
+        prefix_run = para.add_run(f"{prefix} ")
         if not has_caption_style:
-            label.italic = True
+            prefix_run.italic = True
         self._append_seq_field(para, prefix, str(number))
+        if bookmark_id is not None:
+            self._close_bookmark(para, bookmark_id)
         if text_inlines:
             sep_run = para.add_run(": ")
             if not has_caption_style:
@@ -429,6 +469,166 @@ class DocxRenderer(BaseRenderer):
                 text_inlines,
                 force_italic=not has_caption_style,
             )
+
+    # --- cross-references ---------------------------------------------
+
+    def _collect_labels(
+        self, ctx: _DocxContext, blocks: list[Block]
+    ) -> None:
+        """Pre-walk blocks to register ``{#label}`` -> (prefix, number).
+
+        Mirrors the figure/table counter logic so cross-references can
+        resolve to the same number the caption will eventually display,
+        including forward references.
+        """
+        fig_n = 0
+        tab_n = 0
+
+        def walk(items: list[Block]) -> None:
+            nonlocal fig_n, tab_n
+            for blk in items:
+                if isinstance(blk, ImageBlock):
+                    fig_n += 1
+                    if blk.label:
+                        self._register_label(
+                            ctx,
+                            blk.label,
+                            self.options.figure_caption_prefix,
+                            fig_n,
+                        )
+                elif isinstance(blk, Paragraph):
+                    for child in blk.children:
+                        if isinstance(child, InlineImage):
+                            fig_n += 1
+                            if child.label:
+                                self._register_label(
+                                    ctx,
+                                    child.label,
+                                    self.options.figure_caption_prefix,
+                                    fig_n,
+                                )
+                elif isinstance(blk, Table):
+                    if blk.caption is not None:
+                        tab_n += 1
+                        if blk.label:
+                            self._register_label(
+                                ctx,
+                                blk.label,
+                                self.options.table_caption_prefix,
+                                tab_n,
+                            )
+                elif isinstance(blk, (CsvFileEmbed, CsvInlineEmbed)):
+                    if blk.caption is not None:
+                        tab_n += 1
+                        if blk.label:
+                            self._register_label(
+                                ctx,
+                                blk.label,
+                                self.options.table_caption_prefix,
+                                tab_n,
+                            )
+                elif isinstance(blk, BlockQuote):
+                    walk(blk.blocks)
+                elif isinstance(blk, (BulletList, OrderedList)):
+                    for item in blk.items:
+                        walk(item.blocks)
+
+        walk(blocks)
+
+    def _register_label(
+        self,
+        ctx: _DocxContext,
+        label: str,
+        prefix: str,
+        number: int,
+    ) -> None:
+        if label in ctx.label_registry:
+            self._warn_or_raise(
+                f"Duplicate cross-reference label {label!r}; "
+                "keeping the first occurrence"
+            )
+            return
+        ctx.label_registry[label] = (prefix, number)
+
+    def _open_bookmark(
+        self, ctx: _DocxContext, para: DocxParagraph, name: str
+    ) -> int:
+        bid = ctx.bookmark_id_counter
+        ctx.bookmark_id_counter += 1
+        start = OxmlElement("w:bookmarkStart")
+        start.set(qn("w:id"), str(bid))
+        start.set(qn("w:name"), name)
+        para._p.append(start)
+        return bid
+
+    def _close_bookmark(self, para: DocxParagraph, bid: int) -> None:
+        end = OxmlElement("w:bookmarkEnd")
+        end.set(qn("w:id"), str(bid))
+        para._p.append(end)
+
+    def _append_ref_field(
+        self,
+        para: DocxParagraph,
+        bookmark_name: str,
+        displayed: str,
+        fmt: _RunFormat,
+    ) -> None:
+        """Append a Word REF field referencing ``bookmark_name``.
+
+        Emitted as a complex field with a cached display run so the
+        document looks right before fields are first updated.
+        """
+        instr = f" REF {bookmark_name} \\h "
+        p = para._p
+
+        begin_run = OxmlElement("w:r")
+        begin = OxmlElement("w:fldChar")
+        begin.set(qn("w:fldCharType"), "begin")
+        begin_run.append(begin)
+        p.append(begin_run)
+
+        instr_run = OxmlElement("w:r")
+        instr_el = OxmlElement("w:instrText")
+        instr_el.set(qn("xml:space"), "preserve")
+        instr_el.text = instr
+        instr_run.append(instr_el)
+        p.append(instr_run)
+
+        sep_run = OxmlElement("w:r")
+        sep = OxmlElement("w:fldChar")
+        sep.set(qn("w:fldCharType"), "separate")
+        sep_run.append(sep)
+        p.append(sep_run)
+
+        disp_run = self._build_run(displayed, fmt)
+        p.append(disp_run)
+
+        end_run = OxmlElement("w:r")
+        end = OxmlElement("w:fldChar")
+        end.set(qn("w:fldCharType"), "end")
+        end_run.append(end)
+        p.append(end_run)
+
+    def _build_run(self, text: str, fmt: _RunFormat) -> Any:
+        """Build a standalone ``w:r`` element honouring ``fmt``."""
+        run = OxmlElement("w:r")
+        if fmt.bold or fmt.italic or fmt.code:
+            rpr = OxmlElement("w:rPr")
+            if fmt.bold:
+                rpr.append(OxmlElement("w:b"))
+            if fmt.italic:
+                rpr.append(OxmlElement("w:i"))
+            if fmt.code:
+                rfonts = OxmlElement("w:rFonts")
+                rfonts.set(qn("w:ascii"), "Consolas")
+                rfonts.set(qn("w:hAnsi"), "Consolas")
+                rpr.append(rfonts)
+            run.append(rpr)
+        t = OxmlElement("w:t")
+        t.set(qn("xml:space"), "preserve")
+        t.text = text
+        run.append(t)
+        return run
 
     def _append_seq_field(
         self, para: DocxParagraph, name: str, displayed: str
@@ -566,6 +766,9 @@ class DocxRenderer(BaseRenderer):
         fmt: _RunFormat,
     ) -> None:
         href = link.href.strip()
+        if href.startswith("#"):
+            self._render_cross_reference(ctx, para, link, fmt, href[1:])
+            return
         if not href.lower().startswith(_VALID_LINK_SCHEMES):
             # render as plain text
             warnings.warn(
@@ -591,6 +794,37 @@ class DocxRenderer(BaseRenderer):
         for seg in segments:
             hyperlink.append(self._build_hyperlink_run(seg))
         para._p.append(hyperlink)
+
+    def _render_cross_reference(
+        self,
+        ctx: _DocxContext,
+        para: DocxParagraph,
+        link: Link,
+        fmt: _RunFormat,
+        label: str,
+    ) -> None:
+        """Render ``[text](#label)`` as a Word REF cross-reference.
+
+        Falls back to plain text (with a warning) when ``label`` is not
+        registered. Empty link text is auto-filled with ``"<prefix>
+        <number>"`` from the registry.
+        """
+        target = ctx.label_registry.get(label)
+        if target is None:
+            self._warn_or_raise(
+                f"Unknown cross-reference label {label!r}; "
+                "rendering link text as plain text"
+            )
+            for child in link.children:
+                self._render_inline(ctx, para, child, fmt, None)
+            return
+        prefix, number = target
+        segments = self._collect_link_segments(link.children, fmt)
+        if not segments:
+            displayed = f"{prefix} {number}"
+        else:
+            displayed = "".join(seg.text for seg in segments)
+        self._append_ref_field(para, _bookmark_name(label), displayed, fmt)
 
     def _collect_link_segments(
         self, inlines: list[Inline], base: _RunFormat

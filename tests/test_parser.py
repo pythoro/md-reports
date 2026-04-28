@@ -174,3 +174,50 @@ def test_emphasis_nested():
     doc = parse("*just italic*")
     para = doc.blocks[0]
     assert isinstance(para.children[0], Emphasis)
+
+
+def test_block_image_label_extracted_from_alt():
+    doc = parse("![Quarterly revenue {#fig-revenue}](chart.png)")
+    blk = doc.blocks[0]
+    assert isinstance(blk, ImageBlock)
+    assert blk.label == "fig-revenue"
+    assert blk.alt == "Quarterly revenue"
+
+
+def test_inline_image_label_extracted_from_alt():
+    doc = parse("see ![inline {#fig-inline}](x.png) here")
+    para = doc.blocks[0]
+    assert isinstance(para, Paragraph)
+    img = next(c for c in para.children if isinstance(c, InlineImage))
+    assert img.label == "fig-inline"
+    assert img.alt == "inline"
+
+
+def test_image_without_label_unchanged():
+    doc = parse("![just alt](pic.png)")
+    blk = doc.blocks[0]
+    assert isinstance(blk, ImageBlock)
+    assert blk.label is None
+    assert blk.alt == "just alt"
+
+
+def test_table_caption_label_extracted():
+    src = "Table: Sales data {#tab-sales}\n\n| a |\n|---|\n| 1 |\n"
+    doc = parse(src)
+    t = doc.blocks[0]
+    assert isinstance(t, Table)
+    assert t.label == "tab-sales"
+    cap_text = "".join(
+        c.text for c in (t.caption or []) if isinstance(c, Text)
+    )
+    assert "Sales data" in cap_text
+    assert "{#tab-sales}" not in cap_text
+
+
+def test_table_caption_label_with_inline_formatting():
+    src = "Table: *Quarterly* sales {#tab-q}\n\n| a |\n|---|\n| 1 |\n"
+    doc = parse(src)
+    t = doc.blocks[0]
+    assert t.label == "tab-q"
+    # caption still has formatted inline runs
+    assert any(isinstance(c, Emphasis) for c in (t.caption or []))
