@@ -64,6 +64,13 @@ model node (`ImageBlock.label`, `Table.label`,
 `InlineImage.label`). References are written as ordinary markdown links
 with `#label` hrefs.
 
+Table and CSV captions also accept a preview-invisible HTML-comment
+form, e.g. `Table: caption <!-- {#label} -->`. The parser's inline-HTML
+hook recognises `<!--\s*\{#label\}\s*-->` tokens and re-emits them as
+the bare `{#label}` form, so the rest of the extraction pipeline is
+unchanged. Image alt text is already invisible in previews so the
+HTML-comment variant is unnecessary there.
+
 The renderer does a pre-walk over the document to build a label
 registry mapping `label -> (prefix, number)` so forward references
 resolve. Each labelled caption gets a `w:bookmarkStart` /

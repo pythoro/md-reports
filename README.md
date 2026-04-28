@@ -133,6 +133,27 @@ inserting figures keeps numbering and cross-references in sync.
 Unknown `#label` targets degrade to plain text with a warning (or raise
 in `strict_mode`).
 
+#### Preview-friendly label form
+
+The bare `{#label}` marker shows up as literal text when the markdown
+is viewed in a plain markdown previewer (GitHub, VS Code, etc.). For
+table and CSV captions you can wrap the marker in an HTML comment so
+the marker is invisible in previews while still being picked up by
+md-reports:
+
+```markdown
+Table: Sales by region <!-- {#tab-sales} -->
+
+| Region | Total |
+|--------|------:|
+| EMEA   | 100   |
+```
+
+Both forms are supported and behave identically; pick whichever you
+prefer. The comment must come at the end of the caption. Image alt
+text is already invisible in previews, so the bare form is fine there
+and no comment variant is needed.
+
 ### CSV embedding
 
 Two fenced-block variants render CSV data as a DOCX table.

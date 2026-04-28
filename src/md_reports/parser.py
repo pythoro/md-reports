@@ -50,6 +50,7 @@ _HTML_LINK_OPEN = re.compile(
 _HTML_LINK_CLOSE = re.compile(r"</a\s*>", re.IGNORECASE)
 
 _TRAILING_LABEL = re.compile(r"\s*\{#([^}\s]+)\}\s*$")
+_HIDDEN_LABEL_COMMENT = re.compile(r"^\s*<!--\s*\{#([^}\s]+)\}\s*-->\s*$")
 
 
 def _extract_trailing_label(text: str) -> tuple[str, str | None]:
@@ -337,6 +338,12 @@ def _handle_html_inline(
             stack.pop()
             return False
         return in_html_link
+    label_m = _HIDDEN_LABEL_COMMENT.match(raw)
+    if label_m:
+        # Preview-invisible label form: re-emit as the bare ``{#label}``
+        # token so the existing trailing-label extraction picks it up.
+        stack[-1].append(Text(f"{{#{label_m.group(1)}}}"))
+        return in_html_link
     _warn_or_raise(f"Inline HTML is not supported: {raw!r}", opts)
     stack[-1].append(Text(raw))
     return in_html_link
@@ -409,6 +416,12 @@ def _strip_caption_label(
     new_inlines = list(inlines[:-1])
     if stripped:
         new_inlines.append(Text(stripped))
+    elif new_inlines and isinstance(new_inlines[-1], Text):
+        # Label consumed the last Text entirely (HTML-comment form);
+        # trim any trailing whitespace off the now-final Text so the
+        # visible caption matches the bare-form behaviour.
+        prev = new_inlines[-1]
+        new_inlines[-1] = Text(prev.text.rstrip())
     return new_inlines, label
 
 

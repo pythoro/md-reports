@@ -221,3 +221,42 @@ def test_table_caption_label_with_inline_formatting():
     assert t.label == "tab-q"
     # caption still has formatted inline runs
     assert any(isinstance(c, Emphasis) for c in (t.caption or []))
+
+
+def test_table_caption_hidden_html_comment_label_extracted():
+    src = (
+        "Table: Sales data <!-- {#tab-sales} -->\n\n"
+        "| a |\n|---|\n| 1 |\n"
+    )
+    doc = parse(src)
+    t = doc.blocks[0]
+    assert isinstance(t, Table)
+    assert t.label == "tab-sales"
+    cap_text = "".join(
+        c.text for c in (t.caption or []) if isinstance(c, Text)
+    )
+    assert "Sales data" in cap_text
+    assert "<!--" not in cap_text
+    assert "{#" not in cap_text
+
+
+def test_hidden_html_comment_label_does_not_warn(recwarn):
+    src = (
+        "Table: Sales data <!-- {#tab-sales} -->\n\n"
+        "| a |\n|---|\n| 1 |\n"
+    )
+    parse(src)
+    html_warns = [
+        w for w in recwarn.list if "Inline HTML" in str(w.message)
+    ]
+    assert not html_warns
+
+
+def test_table_caption_hidden_label_with_extra_whitespace():
+    src = (
+        "Table: Sales data    <!--   {#tab-sales}   -->\n\n"
+        "| a |\n|---|\n| 1 |\n"
+    )
+    doc = parse(src)
+    t = doc.blocks[0]
+    assert t.label == "tab-sales"

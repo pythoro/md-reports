@@ -22,6 +22,12 @@ bookmark and each ``#label`` link becomes a Word ``REF`` field, so
 reordering or inserting figures keeps numbers and references in sync
 once Word recomputes fields.
 
+Table captions accept a preview-invisible HTML-comment form,
+``<!-- {#tab-headline} -->`` — used here on the closing summary table
+so the markdown source still renders cleanly in a plain markdown
+preview. Image alt text isn't visible in previews anyway, so figures
+keep the bare ``{#fig-revenue}`` form.
+
 Relative image paths in the markdown resolve against the markdown
 file's directory by default, or against ``ConversionOptions.project_root``
 when set — used here to point at a temporary directory holding the
@@ -76,7 +82,7 @@ Both charts get independent ``Figure N`` numbers, regardless of any
 tables that appear between or around them. The closing summary in
 [](#tab-headline) ties them together.
 
-Table: Closing headline numbers. {#tab-headline}
+Table: Closing headline numbers. <!-- {#tab-headline} -->
 
 | Metric           | 2026 |
 |------------------|-----:|
