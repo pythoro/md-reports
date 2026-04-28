@@ -22,8 +22,7 @@ def _open(path: Path):
 
 
 def _full_paragraph_text(p) -> str:
-    """Return all text descendants of a paragraph, including text
-    nested inside w:fldSimple (which paragraph.text skips)."""
+    """Return all w:t text descendants of a paragraph."""
     return "".join(t.text or "" for t in p._p.iter(qn("w:t")))
 
 
@@ -208,10 +207,13 @@ def test_seq_field_present_in_caption(tmp_path):
     convert_markdown_text(md_text, out)
     doc = _open(out)
     cap = next(p for p in doc.paragraphs if p.style.name == "Caption")
-    fld = cap._p.findall(qn("w:fldSimple"))
-    assert fld, "expected SEQ fldSimple in caption"
-    instr = fld[0].get(qn("w:instr"))
-    assert "SEQ" in instr and "Table" in instr
+    fld_chars = cap._p.findall(f".//{qn('w:fldChar')}")
+    types = [fc.get(qn("w:fldCharType")) for fc in fld_chars]
+    assert "begin" in types and "separate" in types and "end" in types
+    instr_texts = cap._p.findall(f".//{qn('w:instrText')}")
+    assert instr_texts, "expected SEQ instrText in caption"
+    joined = "".join(t.text or "" for t in instr_texts)
+    assert "SEQ" in joined and "Table" in joined
 
 
 def test_caption_uses_concrete_style_without_inline_italic(tmp_path):

@@ -50,9 +50,10 @@ HTTP/HTTPS/mailto links; degrade to plain text on failure.
 
 DOCX produces auto-incrementing numbers via Word `SEQ` fields, e.g.
 `{ SEQ Figure \* ARABIC }` and `{ SEQ Table \* ARABIC }`. `python-docx`
-does not expose these directly, so the renderer emits a `w:fldSimple`
-element inside a Caption-styled paragraph. Numbering restarts per
-document and is independent for figures vs tables.
+does not expose these directly, so the renderer emits a complex field
+(`w:fldChar` begin / `w:instrText` / `w:fldChar` separate / cached
+display / `w:fldChar` end) inside a Caption-styled paragraph. Numbering
+restarts per document and is independent for figures vs tables.
 
 ### Image embedding
 

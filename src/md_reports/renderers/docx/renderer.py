@@ -433,15 +433,47 @@ class DocxRenderer(BaseRenderer):
     def _append_seq_field(
         self, para: DocxParagraph, name: str, displayed: str
     ) -> None:
-        """Append a Word SEQ field producing an arabic counter."""
-        fld = OxmlElement("w:fldSimple")
-        fld.set(qn("w:instr"), f" SEQ {name} \\* ARABIC ")
-        run = OxmlElement("w:r")
-        text_el = OxmlElement("w:t")
-        text_el.text = displayed
-        run.append(text_el)
-        fld.append(run)
-        para._p.append(fld)
+        """Append a Word SEQ field producing an arabic counter.
+
+        Emitted as a complex field (``w:fldChar`` begin / ``w:instrText``
+        / ``w:fldChar`` separate / cached display run / ``w:fldChar``
+        end). Word recomputes the number on field update; the cached
+        value keeps first-open rendering correct in viewers that do
+        not auto-update fields.
+        """
+        instr = f" SEQ {name} \\* ARABIC "
+        p = para._p
+
+        begin_run = OxmlElement("w:r")
+        begin = OxmlElement("w:fldChar")
+        begin.set(qn("w:fldCharType"), "begin")
+        begin_run.append(begin)
+        p.append(begin_run)
+
+        instr_run = OxmlElement("w:r")
+        instr_el = OxmlElement("w:instrText")
+        instr_el.set(qn("xml:space"), "preserve")
+        instr_el.text = instr
+        instr_run.append(instr_el)
+        p.append(instr_run)
+
+        sep_run = OxmlElement("w:r")
+        sep = OxmlElement("w:fldChar")
+        sep.set(qn("w:fldCharType"), "separate")
+        sep_run.append(sep)
+        p.append(sep_run)
+
+        disp_run = OxmlElement("w:r")
+        disp_t = OxmlElement("w:t")
+        disp_t.text = displayed
+        disp_run.append(disp_t)
+        p.append(disp_run)
+
+        end_run = OxmlElement("w:r")
+        end = OxmlElement("w:fldChar")
+        end.set(qn("w:fldCharType"), "end")
+        end_run.append(end)
+        p.append(end_run)
 
     # --- inlines ------------------------------------------------------
 
