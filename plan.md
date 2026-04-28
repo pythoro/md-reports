@@ -71,6 +71,38 @@ the bare `{#label}` form, so the rest of the extraction pipeline is
 unchanged. Image alt text is already invisible in previews so the
 HTML-comment variant is unnecessary there.
 
+### Document properties
+
+A `properties: dict[str, str]` keyword on the public conversion
+entry points (and `MarkdownConverter`) writes user metadata to the
+DOCX's core properties (`docProps/core.xml`) via
+`python-docx`'s `doc.core_properties`. These feed Word's built-in
+`{ TITLE }`, `{ AUTHOR }`, `{ SUBJECT }`, `{ KEYWORDS }`,
+`{ COMMENTS }`, `{ CATEGORY }` fields, etc., that the template author
+inserts via *Insert > Quick Parts > Field…*.
+
+User keys are matched case-insensitively against an alias map
+(`_PROPERTY_ALIASES` in the DOCX renderer): the OOXML-canonical
+name plus Word UI labels (`tags` -> keywords, `categories` -> category)
+and Dublin Core synonyms (`creator` -> author,
+`description` -> comments). Unknown keys warn or raise per
+`strict_mode`. Datetime fields (`created`, `modified`, etc.) are
+deliberately omitted.
+
+`MarkdownConverter` carries an optional `default_properties` dict;
+per-call `properties` are merged over it (call-site keys win). Each
+render starts from a freshly-loaded template, so per-call values do
+not bleed across calls.
+
+### Out of scope (follow-ups)
+
+- **Extended properties** (`docProps/app.xml` — Company, Manager).
+  Not exposed by `python-docx`; would need raw OOXML.
+- **Custom properties** (`docProps/custom.xml` — arbitrary
+  user-defined keys/types). Same constraint; could be added behind a
+  separate `custom_properties=` kwarg without disturbing the
+  `properties=` API.
+
 The renderer does a pre-walk over the document to build a label
 registry mapping `label -> (prefix, number)` so forward references
 resolve. Each labelled caption gets a `w:bookmarkStart` /

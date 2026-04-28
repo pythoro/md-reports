@@ -315,6 +315,67 @@ missing):
 - `Table Grid`
 - `Code` (optional; falls back to monospace runs in `Normal`)
 
+### Front matter
+
+Whatever already lives in the template (cover page, headers/footers,
+title block, table of contents) is preserved — markdown content is
+appended after the existing body.
+
+## Document properties
+
+Set DOCX core properties (the fields shown under *File > Info* in
+Word) via `properties=`:
+
+```python
+convert_markdown_text(
+    md,
+    "report.docx",
+    properties={
+        "title": "Q4 Report",
+        "author": "Jane Doe",
+        "subject": "Quarterly review",
+        "tags": "revenue, headcount",
+        "comments": "Reference: REP-2026-Q4",
+        "category": "Finance",
+    },
+)
+```
+
+To display these in the rendered document, edit the template and
+insert the matching field via `Insert > Quick Parts > Field…` →
+`Title` / `Author` / `Subject` / `Keywords` / `Comments` / `Category`.
+You can place these in the body, header, or footer. Word recomputes
+fields on F9 / print, same as `SEQ` and `REF`.
+
+`MarkdownConverter` also accepts `default_properties=`, merged with
+per-call `properties=` (call-site keys win).
+
+Accepted keys (case-insensitive) and the core property they target:
+
+| Key (and aliases) | Core property |
+|---|---|
+| `title` | `title` |
+| `author`, `creator` | `author` |
+| `subject` | `subject` |
+| `keywords`, `tags` | `keywords` |
+| `comments`, `description` | `comments` |
+| `category`, `categories` | `category` |
+| `content_status` | `content_status` |
+| `identifier` | `identifier` |
+| `language` | `language` |
+| `version` | `version` |
+| `last_modified_by` | `last_modified_by` |
+
+Unknown keys warn (or raise under `strict_mode`). Datetime properties
+(`created`, `modified`, `last_printed`, `revision`) are deliberately
+not exposed.
+
+`Company` lives in DOCX extended properties (`docProps/app.xml`),
+not core properties, and is not currently writable via this API.
+Arbitrary user-defined properties (`docProps/custom.xml`) are likewise
+not yet supported — use `subject`/`keywords`/`comments` as a host for
+reference strings or project codes.
+
 ## Limitations (v1)
 
 - No CLI.

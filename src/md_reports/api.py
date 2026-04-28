@@ -19,6 +19,7 @@ def convert_markdown_text(
     renderer: BaseRenderer | None = None,
     options: ConversionOptions | None = None,
     context: dict[str, Any] | None = None,
+    properties: dict[str, str] | None = None,
 ) -> Path:
     """Convert a Markdown string to a document at ``output_path``.
 
@@ -30,6 +31,11 @@ def convert_markdown_text(
 
     If ``context`` is provided, the markdown is rendered as a Jinja2
     template against it before parsing.
+
+    ``properties`` sets document-level metadata (e.g. ``title``,
+    ``author``, ``subject``, ``keywords``/``tags``, ``comments``,
+    ``category``). Values land on the DOCX's core properties and feed
+    template fields like ``{ TITLE }`` or ``{ AUTHOR }``.
     """
     if not isinstance(markdown_text, str):
         raise ValidationError("markdown_text must be a string")
@@ -39,6 +45,7 @@ def convert_markdown_text(
         renderer=renderer,
         options=options,
         context=context,
+        properties=properties,
         markdown_dir=None,
     )
 
@@ -50,6 +57,7 @@ def convert_markdown_file(
     renderer: BaseRenderer | None = None,
     options: ConversionOptions | None = None,
     context: dict[str, Any] | None = None,
+    properties: dict[str, str] | None = None,
 ) -> Path:
     """Read a Markdown file and write the rendered document to disk.
 
@@ -66,6 +74,7 @@ def convert_markdown_file(
         renderer=renderer,
         options=options,
         context=context,
+        properties=properties,
         markdown_dir=md_path.parent.resolve(),
     )
 
@@ -77,6 +86,7 @@ def _convert(
     renderer: BaseRenderer | None,
     options: ConversionOptions | None,
     context: dict[str, Any] | None,
+    properties: dict[str, str] | None,
     markdown_dir: Path | None,
 ) -> Path:
     if renderer is not None and options is not None:
@@ -86,7 +96,12 @@ def _convert(
     opts = (renderer.options if renderer else options) or ConversionOptions()
     document = parse(markdown_text, opts, context=context)
     r = renderer or DocxRenderer(options=opts)
-    return r.render(document, output_path, markdown_dir=markdown_dir)
+    return r.render(
+        document,
+        output_path,
+        markdown_dir=markdown_dir,
+        properties=properties,
+    )
 
 
 class MarkdownConverter:
@@ -103,6 +118,7 @@ class MarkdownConverter:
         renderer: BaseRenderer | None = None,
         options: ConversionOptions | None = None,
         default_context: dict[str, Any] | None = None,
+        default_properties: dict[str, str] | None = None,
     ) -> None:
         if renderer is not None and options is not None:
             raise ValidationError(
@@ -116,6 +132,9 @@ class MarkdownConverter:
             options=self.options
         )
         self.default_context: dict[str, Any] = dict(default_context or {})
+        self.default_properties: dict[str, str] = dict(
+            default_properties or {}
+        )
 
     def convert_text(
         self,
@@ -123,12 +142,14 @@ class MarkdownConverter:
         output_path: str | Path,
         *,
         context: dict[str, Any] | None = None,
+        properties: dict[str, str] | None = None,
     ) -> Path:
         return convert_markdown_text(
             markdown_text,
             output_path,
             renderer=self.renderer,
             context=self._merge_context(context),
+            properties=self._merge_properties(properties),
         )
 
     def convert_file(
@@ -137,12 +158,14 @@ class MarkdownConverter:
         output_path: str | Path,
         *,
         context: dict[str, Any] | None = None,
+        properties: dict[str, str] | None = None,
     ) -> Path:
         return convert_markdown_file(
             markdown_path,
             output_path,
             renderer=self.renderer,
             context=self._merge_context(context),
+            properties=self._merge_properties(properties),
         )
 
     def _merge_context(
@@ -151,3 +174,10 @@ class MarkdownConverter:
         if not self.default_context and not override:
             return None
         return {**self.default_context, **(override or {})}
+
+    def _merge_properties(
+        self, override: dict[str, str] | None
+    ) -> dict[str, str] | None:
+        if not self.default_properties and not override:
+            return None
+        return {**self.default_properties, **(override or {})}

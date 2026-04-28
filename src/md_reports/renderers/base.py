@@ -63,8 +63,14 @@ class BaseRenderer(ABC):
         output_path: Path,
         *,
         markdown_dir: Path | None = None,
+        properties: dict[str, str] | None = None,
     ) -> Path:
-        """Render ``document`` to ``output_path`` and return the path."""
+        """Render ``document`` to ``output_path`` and return the path.
+
+        ``properties`` carries document-level metadata (title, author,
+        etc.). Concrete renderers may apply or ignore it depending on
+        the format's metadata model.
+        """
 
     # --- shared helpers ------------------------------------------------
 

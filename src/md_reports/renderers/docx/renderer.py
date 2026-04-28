@@ -54,6 +54,28 @@ _VALID_LINK_SCHEMES = ("http://", "https://", "mailto:")
 
 _BOOKMARK_SAFE = re.compile(r"[^A-Za-z0-9_]")
 
+# Map user-facing keys to the python-docx ``CoreProperties`` attribute
+# they target. Includes the OOXML-canonical names plus a few aliases
+# matching Word's UI labels (Tags = keywords, Categories = category)
+# and Dublin Core synonyms (creator = author, description = comments).
+_PROPERTY_ALIASES: dict[str, str] = {
+    "title": "title",
+    "author": "author",
+    "creator": "author",
+    "subject": "subject",
+    "keywords": "keywords",
+    "tags": "keywords",
+    "comments": "comments",
+    "description": "comments",
+    "category": "category",
+    "categories": "category",
+    "content_status": "content_status",
+    "identifier": "identifier",
+    "language": "language",
+    "version": "version",
+    "last_modified_by": "last_modified_by",
+}
+
 
 def _bookmark_name(label: str) -> str:
     """Build a Word-safe bookmark name from a user label.
@@ -110,9 +132,12 @@ class DocxRenderer(BaseRenderer):
         output_path: Path,
         *,
         markdown_dir: Path | None = None,
+        properties: dict[str, str] | None = None,
     ) -> Path:
         docx_doc = load_docx_template(self.template_path)
         ctx = _DocxContext(markdown_dir=markdown_dir, doc=docx_doc)
+        if properties:
+            self._apply_properties(ctx, properties)
         self._collect_labels(ctx, document.blocks)
         for block in document.blocks:
             self._render_block(ctx, block)
@@ -469,6 +494,32 @@ class DocxRenderer(BaseRenderer):
                 text_inlines,
                 force_italic=not has_caption_style,
             )
+
+    # --- document properties ------------------------------------------
+
+    def _apply_properties(
+        self, ctx: _DocxContext, properties: dict[str, str]
+    ) -> None:
+        """Apply user-supplied metadata to ``doc.core_properties``.
+
+        Keys are matched case-insensitively against
+        :data:`_PROPERTY_ALIASES`. Unknown keys warn (or raise in
+        ``strict_mode``). Empty-string values clear the corresponding
+        property.
+        """
+        cp = ctx.doc.core_properties
+        for raw_key, value in properties.items():
+            key = raw_key.strip().lower()
+            attr = _PROPERTY_ALIASES.get(key)
+            if attr is None:
+                self._warn_or_raise(
+                    f"Unknown document property {raw_key!r}; "
+                    f"expected one of: {sorted(_PROPERTY_ALIASES)}"
+                )
+                continue
+            if value is None:
+                continue
+            setattr(cp, attr, str(value))
 
     # --- cross-references ---------------------------------------------
 
