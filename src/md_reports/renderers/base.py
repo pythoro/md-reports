@@ -86,16 +86,31 @@ class BaseRenderer(ABC):
         Remote (``http(s)://``) sources are rejected with a warning or
         raise. Missing files are reported the same way. Returns ``None``
         if the asset cannot be used.
+
+        When :attr:`ConversionOptions.confine_assets` is set, the
+        resolved path must lie under the asset base
+        (``project_root`` if configured, otherwise the markdown
+        directory or CWD); absolute paths and ``..`` traversals that
+        escape the base are rejected.
         """
         if src.startswith(("http://", "https://")):
             self._warn_or_raise(f"Remote {kind} not supported: {src}")
             return None
+        base = self._asset_base(ctx).resolve()
         candidate = Path(src)
-        resolved = (
-            candidate
-            if candidate.is_absolute()
-            else (self._asset_base(ctx) / candidate).resolve()
-        )
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+        else:
+            resolved = (base / candidate).resolve()
+        if self.options.confine_assets:
+            try:
+                resolved.relative_to(base)
+            except ValueError:
+                self._warn_or_raise(
+                    f"{kind.capitalize()} path escapes asset base "
+                    f"(confine_assets=True): {src!r}"
+                )
+                return None
         if not resolved.exists():
             self._warn_or_raise(f"{kind.capitalize()} not found: {resolved}")
             return None
