@@ -67,6 +67,40 @@ def test_convert_file_resolves_relative_image(tmp_path):
     assert "Figure" in joined and "A tiny picture" in joined
 
 
+def test_convert_text_resolves_relative_image_via_base_dir(tmp_path):
+    """``base_dir`` lets wrapper libs forward a project root for asset
+    resolution when the source is text rather than a file."""
+    png = tmp_path / "tiny.png"
+    png.write_bytes(_one_pixel_png())
+    out = tmp_path / "out.docx"
+    convert_markdown_text(
+        "![A tiny picture](tiny.png)\n",
+        out,
+        base_dir=tmp_path,
+    )
+    doc = _open(out)
+    caption_texts = [
+        p.text for p in doc.paragraphs if p.style.name == "Caption"
+    ]
+    joined = " ".join(caption_texts)
+    assert "Figure" in joined and "A tiny picture" in joined
+
+
+def test_convert_file_base_dir_overrides_markdown_parent(tmp_path):
+    """Explicit ``base_dir`` overrides the default of using the
+    markdown file's parent directory."""
+    project_root = tmp_path / "project"
+    src_dir = tmp_path / "elsewhere"
+    project_root.mkdir()
+    src_dir.mkdir()
+    (project_root / "tiny.png").write_bytes(_one_pixel_png())
+    md = src_dir / "doc.md"
+    md.write_text("![A tiny picture](tiny.png)\n", encoding="utf-8")
+    out = tmp_path / "out.docx"
+    convert_markdown_file(md, out, base_dir=project_root)
+    assert out.exists()
+
+
 def test_table_caption_above_table(tmp_path):
     md_text = "Table: My table.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
     out = tmp_path / "tab.docx"

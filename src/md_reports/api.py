@@ -20,6 +20,7 @@ def convert_markdown_text(
     options: ConversionOptions | None = None,
     context: dict[str, Any] | None = None,
     properties: dict[str, str] | None = None,
+    base_dir: str | Path | None = None,
 ) -> Path:
     """Convert a Markdown string to a document at ``output_path``.
 
@@ -36,6 +37,15 @@ def convert_markdown_text(
     ``author``, ``subject``, ``keywords``/``tags``, ``comments``,
     ``category``). Values land on the DOCX's core properties and feed
     template fields like ``{ TITLE }`` or ``{ AUTHOR }``.
+
+    ``base_dir`` is the directory used to resolve relative paths to
+    external assets (images, CSV files). When omitted, paths resolve
+    against the current working directory. Wrapper libraries built on
+    top of md-reports should forward their caller's project directory
+    here so relative paths in the markdown resolve against the
+    consumer project rather than the wrapper's cwd.
+    ``ConversionOptions.project_root``, when set, still wins over
+    ``base_dir``.
     """
     if not isinstance(markdown_text, str):
         raise ValidationError("markdown_text must be a string")
@@ -46,7 +56,7 @@ def convert_markdown_text(
         options=options,
         context=context,
         properties=properties,
-        markdown_dir=None,
+        markdown_dir=Path(base_dir).resolve() if base_dir else None,
     )
 
 
@@ -58,16 +68,24 @@ def convert_markdown_file(
     options: ConversionOptions | None = None,
     context: dict[str, Any] | None = None,
     properties: dict[str, str] | None = None,
+    base_dir: str | Path | None = None,
 ) -> Path:
     """Read a Markdown file and write the rendered document to disk.
 
     Same parameters as :func:`convert_markdown_text` but reads the
-    source from ``markdown_path``.
+    source from ``markdown_path``. ``base_dir`` defaults to the
+    markdown file's parent directory; pass it explicitly to override
+    (for example, to resolve assets relative to a consumer project
+    root rather than the markdown file's location).
     """
     md_path = Path(markdown_path)
     if not md_path.exists():
         raise ValidationError(f"Markdown file not found: {md_path}")
     text = md_path.read_text(encoding="utf-8")
+    if base_dir is not None:
+        markdown_dir = Path(base_dir).resolve()
+    else:
+        markdown_dir = md_path.parent.resolve()
     return _convert(
         markdown_text=text,
         output_path=Path(output_path),
@@ -75,7 +93,7 @@ def convert_markdown_file(
         options=options,
         context=context,
         properties=properties,
-        markdown_dir=md_path.parent.resolve(),
+        markdown_dir=markdown_dir,
     )
 
 
@@ -143,6 +161,7 @@ class MarkdownConverter:
         *,
         context: dict[str, Any] | None = None,
         properties: dict[str, str] | None = None,
+        base_dir: str | Path | None = None,
     ) -> Path:
         return convert_markdown_text(
             markdown_text,
@@ -150,6 +169,7 @@ class MarkdownConverter:
             renderer=self.renderer,
             context=self._merge_context(context),
             properties=self._merge_properties(properties),
+            base_dir=base_dir,
         )
 
     def convert_file(
@@ -159,6 +179,7 @@ class MarkdownConverter:
         *,
         context: dict[str, Any] | None = None,
         properties: dict[str, str] | None = None,
+        base_dir: str | Path | None = None,
     ) -> Path:
         return convert_markdown_file(
             markdown_path,
@@ -166,6 +187,7 @@ class MarkdownConverter:
             renderer=self.renderer,
             context=self._merge_context(context),
             properties=self._merge_properties(properties),
+            base_dir=base_dir,
         )
 
     def _merge_context(
