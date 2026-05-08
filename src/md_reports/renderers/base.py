@@ -98,8 +98,17 @@ class BaseRenderer(ABC):
             return None
         base = self._asset_base(ctx).resolve()
         candidate = Path(src)
-        if candidate.is_absolute():
+        if candidate.drive:
+            # Windows drive-anchored (e.g. "C:/foo") or UNC ("\\\\server\\share\\foo").
+            # True absolute — resolve directly.
             resolved = candidate.resolve()
+        elif src.startswith(("/", "\\")):
+            # Leading-slash convention: resolve relative to the asset base
+            # ("project root"), matching HTML/web semantics. Without this,
+            # pathlib's join drops the base's directory on Windows
+            # (Path("C:/x") / "/y" -> Path("C:/y")) and POSIX treats the path
+            # as filesystem-absolute.
+            resolved = (base / Path(src.lstrip("/\\"))).resolve()
         else:
             resolved = (base / candidate).resolve()
         if self.options.confine_assets:
