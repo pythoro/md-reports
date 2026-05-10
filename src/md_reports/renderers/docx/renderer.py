@@ -375,13 +375,14 @@ class DocxRenderer(BaseRenderer):
         if path is None:
             return
         if not after_paragraph:
-            para = ctx.doc.add_paragraph()
+            para = ctx.doc.add_paragraph(style=self._image_style(ctx))
             run = para.add_run()
             try:
-                run.add_picture(str(path))
+                shape = run.add_picture(str(path))
             except Exception as exc:  # noqa: BLE001
                 self._warn_or_raise(f"Failed to embed image {path}: {exc}")
                 return
+            self._constrain_picture_width(ctx, shape)
         # else: image was rendered inline already
         ctx.figure_counter += 1
         cap_inlines: list[Inline] = []
@@ -472,28 +473,18 @@ class DocxRenderer(BaseRenderer):
         text_inlines: list[Inline],
         label: str | None = None,
     ) -> None:
-        has_caption_style = style_exists(ctx.doc, "Caption")
-        style = "Caption" if has_caption_style else "Normal"
+        style = "Caption" if style_exists(ctx.doc, "Caption") else "Normal"
         para = ctx.doc.add_paragraph(style=style)
         bookmark_id: int | None = None
         if label:
             bookmark_id = self._open_bookmark(ctx, para, _bookmark_name(label))
-        prefix_run = para.add_run(f"{prefix} ")
-        if not has_caption_style:
-            prefix_run.italic = True
+        para.add_run(f"{prefix} ")
         self._append_seq_field(para, prefix, str(number))
         if bookmark_id is not None:
             self._close_bookmark(para, bookmark_id)
         if text_inlines:
-            sep_run = para.add_run(": ")
-            if not has_caption_style:
-                sep_run.italic = True
-            self._render_inlines(
-                ctx,
-                para,
-                text_inlines,
-                force_italic=not has_caption_style,
-            )
+            para.add_run(": ")
+            self._render_inlines(ctx, para, text_inlines)
 
     # --- document properties ------------------------------------------
 
@@ -814,12 +805,63 @@ class DocxRenderer(BaseRenderer):
         if path is None:
             return
         try:
-            para.add_run().add_picture(str(path))
+            shape = para.add_run().add_picture(str(path))
         except Exception as exc:  # noqa: BLE001
             self._warn_or_raise(f"Failed to embed image {path}: {exc}")
             return
+        self._constrain_picture_width(ctx, shape)
         if deferred_images is not None:
             deferred_images.append(img)
+
+    def _image_style(self, ctx: _DocxContext) -> str:
+        """Return the style name for image paragraphs.
+
+        Uses the template's ``Image`` style when present. Otherwise
+        creates a paragraph style named ``Image`` based on ``Normal`` so
+        the output document carries a consistent, user-customisable
+        style for images regardless of which template was supplied.
+        """
+        from docx.enum.style import WD_STYLE_TYPE
+
+        if style_exists(ctx.doc, "Image"):
+            return "Image"
+        try:
+            new_style = ctx.doc.styles.add_style(
+                "Image", WD_STYLE_TYPE.PARAGRAPH
+            )
+        except ValueError:
+            # A non-paragraph style with the same name already exists;
+            # we cannot apply it to a paragraph, so use Normal.
+            return "Normal"
+        if style_exists(ctx.doc, "Normal"):
+            try:
+                new_style.base_style = ctx.doc.styles["Normal"]  # type: ignore[attr-defined]
+            except AttributeError:
+                pass
+        return "Image"
+
+    def _constrain_picture_width(self, ctx: _DocxContext, shape) -> None:
+        """Cap an inline picture at the page's content width.
+
+        Word does not auto-fit images, so anything wider than the text
+        column overflows the page. Scale height proportionally so the
+        aspect ratio is preserved.
+
+        Uses the *last* section's geometry because new paragraphs are
+        appended to the body's tail and so belong to that section in
+        multi-section templates.
+        """
+        section = ctx.doc.sections[-1]
+        page_width = section.page_width
+        left = section.left_margin
+        right = section.right_margin
+        if page_width is None or left is None or right is None:
+            return
+        max_width = page_width - left - right
+        if shape.width and max_width > 0 and shape.width > max_width:
+            ratio = max_width / shape.width
+            shape.width = max_width
+            shape.height = int(shape.height * ratio)
 
     # --- hyperlinks ---------------------------------------------------
 
