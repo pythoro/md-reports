@@ -68,9 +68,11 @@ Block elements:
   literal data
 - Embedded images (`![alt](path)`) as figures with auto-numbered
   captions
+- LaTeX math expressions rendered as native, editable Word equations
+  (inline `$…$` and display `$$…$$`)
 
-Inline elements: bold, italic, inline code, markdown links, and minimal
-inline `<a href="...">…</a>` HTML.
+Inline elements: bold, italic, inline code, markdown links, minimal
+inline `<a href="...">…</a>` HTML, and inline math (`$…$`).
 
 ### Figures
 
@@ -230,6 +232,35 @@ the underlying method, e.g.:
 ```
 ````
 
+### Math
+
+LaTeX math expressions written between dollar delimiters render as
+native Word equations — the same OMML the Word equation editor produces,
+so they open as editable equations rather than text or images.
+
+```markdown
+The mass-energy relation is $E = mc^2$.
+
+$$\int_0^1 x^2 \, dx = \tfrac{1}{3}$$
+```
+
+- `$…$` — inline math, placed inside the surrounding paragraph.
+- `$$…$$` — display math, emitted as its own paragraph.
+
+Whitespace-adjacent dollars (`$ 5 and $ 10`) are intentionally not
+treated as math, so prose containing currency stays untouched.
+
+Display-math paragraphs use a paragraph style named `Math equation`.
+The renderer reuses that style if your template already defines it
+(so you can pin alignment, spacing-before/after, indent, etc. there);
+otherwise a `Math equation` style based on `Normal` is auto-created in
+the output document.
+
+LaTeX is converted via `math2docx` (LaTeX → MathML → OMML). If a given
+expression fails to convert (unsupported macro, malformed syntax), the
+renderer warns and falls back to the original `$…$` source as plain
+text. Under `strict_mode=True` it raises `RenderError`.
+
 ## Jinja2 context
 
 Pass a `context` dict to inject script-side values into the markdown
@@ -314,6 +345,8 @@ missing):
 - `Quote`, `Caption`
 - `Table Grid`
 - `Code` (optional; falls back to monospace runs in `Normal`)
+- `Math equation` (optional; auto-created based on `Normal` if missing —
+  applied to display-math paragraphs)
 
 ### Front matter
 
@@ -388,7 +421,9 @@ reference strings or project codes.
 - `SEQ` field numbers display correctly in Word once fields update
   (typically on print or pressing `F9`); the file is written with a
   pre-computed display value so first-open looks right too.
-- No footnotes, math, definition lists, or task lists.
+- No footnotes, definition lists, or task lists.
+- Math delimiters are dollar-only (`$…$`, `$$…$$`); LaTeX `\(…\)` and
+  `\[…\]` forms are not recognised.
 
 ## Errors
 

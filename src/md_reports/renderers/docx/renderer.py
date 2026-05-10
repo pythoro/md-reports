@@ -32,6 +32,8 @@ from md_reports.model import (
     LineBreak,
     Link,
     ListItem,
+    MathBlock,
+    MathInline,
     OrderedList,
     Paragraph,
     Strong,
@@ -168,6 +170,8 @@ class DocxRenderer(BaseRenderer):
             self._render_csv_file(ctx, block)
         elif isinstance(block, CsvInlineEmbed):
             self._render_csv_inline(ctx, block)
+        elif isinstance(block, MathBlock):
+            self._render_math_block(ctx, block)
         else:
             self._warn_or_raise(
                 f"Unsupported block type: {type(block).__name__}"
@@ -514,9 +518,7 @@ class DocxRenderer(BaseRenderer):
 
     # --- cross-references ---------------------------------------------
 
-    def _collect_labels(
-        self, ctx: _DocxContext, blocks: list[Block]
-    ) -> None:
+    def _collect_labels(self, ctx: _DocxContext, blocks: list[Block]) -> None:
         """Pre-walk blocks to register ``{#label}`` -> (prefix, number).
 
         Mirrors the figure/table counter logic so cross-references can
@@ -778,8 +780,63 @@ class DocxRenderer(BaseRenderer):
             self._render_link(ctx, para, inline, fmt)
         elif isinstance(inline, InlineImage):
             self._render_inline_image(ctx, para, inline, deferred_images)
+        elif isinstance(inline, MathInline):
+            self._render_math_inline(para, inline)
         else:
             self._warn_or_raise(f"Unsupported inline: {type(inline).__name__}")
+
+    # --- math ---------------------------------------------------------
+
+    def _render_math_inline(self, para: DocxParagraph, m: MathInline) -> None:
+        import math2docx
+
+        try:
+            math2docx.add_math(para, m.latex)
+        except Exception as exc:  # noqa: BLE001
+            self._warn_or_raise(
+                f"Failed to render inline math {m.latex!r}: {exc}"
+            )
+            para.add_run(f"${m.latex}$")
+
+    def _render_math_block(self, ctx: _DocxContext, m: MathBlock) -> None:
+        import math2docx
+
+        style = self._math_block_style(ctx)
+        para = ctx.doc.add_paragraph(style=style)
+        try:
+            math2docx.add_math(para, m.latex)
+        except Exception as exc:  # noqa: BLE001
+            self._warn_or_raise(
+                f"Failed to render display math {m.latex!r}: {exc}"
+            )
+            para.add_run(f"$${m.latex}$$")
+
+    def _math_block_style(self, ctx: _DocxContext) -> str:
+        """Return the style name for display-math paragraphs.
+
+        Uses the template's ``Math equation`` style when present.
+        Otherwise creates a paragraph style by that name based on
+        ``Normal`` so the output document carries a consistent,
+        user-customisable style for equations regardless of which
+        template was supplied.
+        """
+        from docx.enum.style import WD_STYLE_TYPE
+
+        name = "Math equation"
+        if style_exists(ctx.doc, name):
+            return name
+        try:
+            new_style = ctx.doc.styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
+        except ValueError:
+            # A non-paragraph style with the same name already exists;
+            # we cannot apply it to a paragraph, so use Normal.
+            return "Normal"
+        if style_exists(ctx.doc, "Normal"):
+            try:
+                new_style.base_style = ctx.doc.styles["Normal"]  # type: ignore[attr-defined]
+            except AttributeError:
+                pass
+        return name
 
     def _add_run(
         self, para: DocxParagraph, text: str, fmt: _RunFormat

@@ -57,7 +57,23 @@ class LineBreak:
     """Hard line break."""
 
 
-Inline = Text | Strong | Emphasis | InlineCode | Link | InlineImage | LineBreak
+@dataclass
+class MathInline:
+    """Inline LaTeX math expression (between single ``$``)."""
+
+    latex: str
+
+
+Inline = (
+    Text
+    | Strong
+    | Emphasis
+    | InlineCode
+    | Link
+    | InlineImage
+    | LineBreak
+    | MathInline
+)
 
 
 # --- Block nodes ------------------------------------------------------
@@ -149,6 +165,13 @@ class CsvFileEmbed:
 
 
 @dataclass
+class MathBlock:
+    """Display LaTeX math expression (between ``$$``)."""
+
+    latex: str
+
+
+@dataclass
 class CsvInlineEmbed:
     """Embed inline CSV literal data as a DOCX table.
 
@@ -173,6 +196,7 @@ Block = (
     | ImageBlock
     | CsvFileEmbed
     | CsvInlineEmbed
+    | MathBlock
 )
 
 

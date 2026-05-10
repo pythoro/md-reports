@@ -1,8 +1,8 @@
 """Parse Markdown into the internal document model.
 
-Uses markdown-it-py with the GFM table extension enabled. Tokens are
-walked recursively and assembled into the model defined in
-:mod:`md_reports.model`.
+Uses markdown-it-py with the GFM table extension and the dollar-math
+plugin enabled. Tokens are walked recursively and assembled into the
+model defined in :mod:`md_reports.model`.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Any
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
+from mdit_py_plugins.dollarmath import dollarmath_plugin
 
 from md_reports.context import apply_context
 from md_reports.errors import ParseError
@@ -33,6 +34,8 @@ from md_reports.model import (
     LineBreak,
     Link,
     ListItem,
+    MathBlock,
+    MathInline,
     OrderedList,
     Paragraph,
     Strong,
@@ -85,7 +88,15 @@ def parse(
             opts.strict_mode,
             sandboxed=opts.sandboxed_context,
         )
-    md = MarkdownIt("commonmark").enable("table")
+    md = (
+        MarkdownIt("commonmark")
+        .enable("table")
+        .use(
+            dollarmath_plugin,
+            allow_space=False,
+            double_inline=False,
+        )
+    )
     tokens = md.parse(text)
     blocks, _ = _parse_blocks(tokens, 0, len(tokens), opts)
     blocks = _apply_table_captions(blocks, opts)
@@ -143,6 +154,9 @@ def _parse_blocks(
             close = _find_matching(tokens, i, "table_close")
             blocks.append(_parse_table(tokens, i, close, opts))
             i = close + 1
+        elif t == "math_block":
+            blocks.append(MathBlock(latex=tok.content))
+            i += 1
         elif t == "hr":
             i += 1
         elif t == "html_block":
@@ -283,6 +297,8 @@ def _parse_inlines(
             stack[-1].append(LineBreak())
         elif t == "code_inline":
             stack[-1].append(InlineCode(tok.content))
+        elif t == "math_inline":
+            stack[-1].append(MathInline(latex=tok.content))
         elif t == "strong_open":
             node = Strong()
             stack[-1].append(node)
