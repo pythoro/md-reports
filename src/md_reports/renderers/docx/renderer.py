@@ -32,6 +32,8 @@ from md_reports.model import (
     LineBreak,
     Link,
     ListItem,
+    MathBlock,
+    MathInline,
     OrderedList,
     Paragraph,
     Strong,
@@ -168,6 +170,8 @@ class DocxRenderer(BaseRenderer):
             self._render_csv_file(ctx, block)
         elif isinstance(block, CsvInlineEmbed):
             self._render_csv_inline(ctx, block)
+        elif isinstance(block, MathBlock):
+            self._render_math_block(ctx, block)
         else:
             self._warn_or_raise(
                 f"Unsupported block type: {type(block).__name__}"
@@ -514,9 +518,7 @@ class DocxRenderer(BaseRenderer):
 
     # --- cross-references ---------------------------------------------
 
-    def _collect_labels(
-        self, ctx: _DocxContext, blocks: list[Block]
-    ) -> None:
+    def _collect_labels(self, ctx: _DocxContext, blocks: list[Block]) -> None:
         """Pre-walk blocks to register ``{#label}`` -> (prefix, number).
 
         Mirrors the figure/table counter logic so cross-references can
@@ -778,8 +780,37 @@ class DocxRenderer(BaseRenderer):
             self._render_link(ctx, para, inline, fmt)
         elif isinstance(inline, InlineImage):
             self._render_inline_image(ctx, para, inline, deferred_images)
+        elif isinstance(inline, MathInline):
+            self._render_math_inline(para, inline)
         else:
             self._warn_or_raise(f"Unsupported inline: {type(inline).__name__}")
+
+    # --- math ---------------------------------------------------------
+
+    def _render_math_inline(self, para: DocxParagraph, m: MathInline) -> None:
+        import math2docx
+
+        try:
+            math2docx.add_math(para, m.latex)
+        except Exception as exc:  # noqa: BLE001
+            self._warn_or_raise(
+                f"Failed to render inline math {m.latex!r}: {exc}"
+            )
+            para.add_run(f"${m.latex}$")
+
+    def _render_math_block(self, ctx: _DocxContext, m: MathBlock) -> None:
+        import math2docx
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+        para = ctx.doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        try:
+            math2docx.add_math(para, m.latex)
+        except Exception as exc:  # noqa: BLE001
+            self._warn_or_raise(
+                f"Failed to render display math {m.latex!r}: {exc}"
+            )
+            para.add_run(f"$${m.latex}$$")
 
     def _add_run(
         self, para: DocxParagraph, text: str, fmt: _RunFormat

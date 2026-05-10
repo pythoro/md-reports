@@ -15,6 +15,8 @@ from md_reports.model import (
     InlineCode,
     InlineImage,
     Link,
+    MathBlock,
+    MathInline,
     OrderedList,
     Paragraph,
     Strong,
@@ -147,6 +149,29 @@ def test_table_caption_custom_prefix():
     assert doc.blocks[0].caption is not None
 
 
+def test_inline_math_parsed():
+    doc = parse("Energy is $E=mc^2$ here.")
+    para = doc.blocks[0]
+    assert isinstance(para, Paragraph)
+    math = next(c for c in para.children if isinstance(c, MathInline))
+    assert math.latex == "E=mc^2"
+
+
+def test_display_math_parsed():
+    doc = parse("$$\\int_0^1 x\\,dx$$\n")
+    assert len(doc.blocks) == 1
+    blk = doc.blocks[0]
+    assert isinstance(blk, MathBlock)
+    assert blk.latex.strip() == "\\int_0^1 x\\,dx"
+
+
+def test_dollar_with_space_is_not_math():
+    doc = parse("Costs $5 and $10 today.")
+    para = doc.blocks[0]
+    assert isinstance(para, Paragraph)
+    assert not any(isinstance(c, MathInline) for c in para.children)
+
+
 def test_block_image_lifted():
     doc = parse("![alt text](pic.png)")
     blk = doc.blocks[0]
@@ -224,10 +249,7 @@ def test_table_caption_label_with_inline_formatting():
 
 
 def test_table_caption_hidden_html_comment_label_extracted():
-    src = (
-        "Table: Sales data <!-- {#tab-sales} -->\n\n"
-        "| a |\n|---|\n| 1 |\n"
-    )
+    src = "Table: Sales data <!-- {#tab-sales} -->\n\n| a |\n|---|\n| 1 |\n"
     doc = parse(src)
     t = doc.blocks[0]
     assert isinstance(t, Table)
@@ -241,14 +263,9 @@ def test_table_caption_hidden_html_comment_label_extracted():
 
 
 def test_hidden_html_comment_label_does_not_warn(recwarn):
-    src = (
-        "Table: Sales data <!-- {#tab-sales} -->\n\n"
-        "| a |\n|---|\n| 1 |\n"
-    )
+    src = "Table: Sales data <!-- {#tab-sales} -->\n\n| a |\n|---|\n| 1 |\n"
     parse(src)
-    html_warns = [
-        w for w in recwarn.list if "Inline HTML" in str(w.message)
-    ]
+    html_warns = [w for w in recwarn.list if "Inline HTML" in str(w.message)]
     assert not html_warns
 
 

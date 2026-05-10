@@ -264,6 +264,7 @@ def test_caption_uses_concrete_style_without_inline_italic(tmp_path):
 def test_caption_does_not_force_italic_when_style_missing(tmp_path):
     from docx import Document as DocxDocument
     from docx.oxml.ns import qn
+
     from md_reports import DocxRenderer
 
     template_src = get_default_template_path()
@@ -368,9 +369,7 @@ def test_unknown_cross_reference_label_warns_and_falls_back(tmp_path):
     with pytest.warns(UserWarning):
         convert_markdown_text(md_text, out)
     doc = _open(out)
-    para = next(
-        p for p in doc.paragraphs if "see" in _full_paragraph_text(p)
-    )
+    para = next(p for p in doc.paragraphs if "see" in _full_paragraph_text(p))
     # No REF field emitted
     instr_texts = para._p.findall(f".//{qn('w:instrText')}")
     assert not any("REF" in (t.text or "") for t in instr_texts)
@@ -386,6 +385,49 @@ def test_duplicate_cross_reference_label_warns(tmp_path):
     out = tmp_path / "dup.docx"
     with pytest.warns(UserWarning):
         convert_markdown_text(md_text, out)
+
+
+def test_inline_math_renders_as_omml(tmp_path):
+    out = tmp_path / "math_inline.docx"
+    convert_markdown_text("Energy is $E=mc^2$ here.\n", out)
+    doc = _open(out)
+    para = doc.paragraphs[0]
+    xml = para._p.xml
+    assert "oMath" in xml
+    text = _full_paragraph_text(para)
+    assert "Energy is" in text and "here." in text
+
+
+def test_display_math_renders_centered_with_omml(tmp_path):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    out = tmp_path / "math_display.docx"
+    convert_markdown_text("$$\\int_0^1 x\\,dx$$\n", out)
+    doc = _open(out)
+    math_para = next(p for p in doc.paragraphs if "oMath" in p._p.xml)
+    assert math_para.alignment == WD_ALIGN_PARAGRAPH.CENTER
+
+
+def test_invalid_inline_math_warns_and_falls_back_to_text(tmp_path):
+    out = tmp_path / "math_bad.docx"
+    with pytest.warns(UserWarning):
+        convert_markdown_text("before $\\frob{$ after\n", out)
+    doc = _open(out)
+    para = doc.paragraphs[0]
+    text = _full_paragraph_text(para)
+    assert "$\\frob{$" in text
+
+
+def test_invalid_inline_math_strict_raises(tmp_path):
+    from md_reports.errors import RenderError
+
+    out = tmp_path / "math_strict.docx"
+    with pytest.raises(RenderError):
+        convert_markdown_text(
+            "before $\\frob{$ after\n",
+            out,
+            options=ConversionOptions(strict_mode=True),
+        )
 
 
 def _one_pixel_png() -> bytes:

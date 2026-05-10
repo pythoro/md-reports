@@ -99,7 +99,8 @@ class BaseRenderer(ABC):
         base = self._asset_base(ctx).resolve()
         candidate = Path(src)
         if candidate.drive:
-            # Windows drive-anchored (e.g. "C:/foo") or UNC ("\\\\server\\share\\foo").
+            # Windows drive-anchored (e.g. "C:/foo") or
+            # UNC ("\\\\server\\share\\foo").
             # True absolute — resolve directly.
             resolved = candidate.resolve()
         elif src.startswith(("/", "\\")):
