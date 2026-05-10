@@ -800,10 +800,9 @@ class DocxRenderer(BaseRenderer):
 
     def _render_math_block(self, ctx: _DocxContext, m: MathBlock) -> None:
         import math2docx
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-        para = ctx.doc.add_paragraph()
-        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        style = self._math_block_style(ctx)
+        para = ctx.doc.add_paragraph(style=style)
         try:
             math2docx.add_math(para, m.latex)
         except Exception as exc:  # noqa: BLE001
@@ -811,6 +810,33 @@ class DocxRenderer(BaseRenderer):
                 f"Failed to render display math {m.latex!r}: {exc}"
             )
             para.add_run(f"$${m.latex}$$")
+
+    def _math_block_style(self, ctx: _DocxContext) -> str:
+        """Return the style name for display-math paragraphs.
+
+        Uses the template's ``Math equation`` style when present.
+        Otherwise creates a paragraph style by that name based on
+        ``Normal`` so the output document carries a consistent,
+        user-customisable style for equations regardless of which
+        template was supplied.
+        """
+        from docx.enum.style import WD_STYLE_TYPE
+
+        name = "Math equation"
+        if style_exists(ctx.doc, name):
+            return name
+        try:
+            new_style = ctx.doc.styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
+        except ValueError:
+            # A non-paragraph style with the same name already exists;
+            # we cannot apply it to a paragraph, so use Normal.
+            return "Normal"
+        if style_exists(ctx.doc, "Normal"):
+            try:
+                new_style.base_style = ctx.doc.styles["Normal"]  # type: ignore[attr-defined]
+            except AttributeError:
+                pass
+        return name
 
     def _add_run(
         self, para: DocxParagraph, text: str, fmt: _RunFormat
