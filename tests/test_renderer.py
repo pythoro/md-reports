@@ -261,7 +261,7 @@ def test_caption_uses_concrete_style_without_inline_italic(tmp_path):
     assert all(r.italic is None for r in cap.runs)
 
 
-def test_caption_falls_back_to_inline_italic_when_style_missing(tmp_path):
+def test_caption_does_not_force_italic_when_style_missing(tmp_path):
     from docx import Document as DocxDocument
     from docx.oxml.ns import qn
     from md_reports import DocxRenderer
@@ -288,7 +288,7 @@ def test_caption_falls_back_to_inline_italic_when_style_missing(tmp_path):
         p for p in doc2.paragraphs if "Table" in _full_paragraph_text(p)
     )
     assert cap.style.name == "Normal"
-    assert any(r.italic is True for r in cap.runs)
+    assert all(r.italic is None for r in cap.runs)
 
 
 def test_cross_reference_emits_bookmark_and_ref_field(tmp_path):
