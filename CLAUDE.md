@@ -78,6 +78,35 @@ Deferred:
 - Nested tables.
 - Advanced width and layout controls.
 
+## Math Support
+
+LaTeX math expressions render as native, editable Word equations
+(OMML — the format Word's equation editor produces).
+
+Supported:
+- Inline math (`$…$`) and display math (`$$…$$`).
+- Conversion via the `math2docx` package (LaTeX → MathML → OMML).
+- Display-math paragraphs use a `Math equation` paragraph style;
+  reused if the template defines it, otherwise auto-created based on
+  `Normal`.
+
+Parser:
+- Enable the `dollarmath` plugin from `mdit-py-plugins` with
+  `allow_space=False`, `double_inline=False` so currency-like prose
+  (`$5 and $10`) is not mis-parsed as math.
+
+Fallback behavior:
+- On conversion failure (unsupported macro, malformed LaTeX), the
+  renderer warns and emits the original `$…$` source as plain text.
+- Strict mode raises `RenderError` instead.
+
+Out of scope:
+- Bracket delimiters (`\(…\)`, `\[…\]`).
+- Inline-formatting context (e.g. wrapping `$…$` inside `**bold**`)
+  does not propagate into the equation; OMML has its own formatting
+  model and `math2docx.add_math` always appends a top-level `m:oMath`
+  to the paragraph.
+
 ## Link Handling Notes
 
 Clickable DOCX links require low-level XML and relationship handling.

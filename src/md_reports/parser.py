@@ -1,8 +1,8 @@
 """Parse Markdown into the internal document model.
 
-Uses markdown-it-py with the GFM table extension enabled. Tokens are
-walked recursively and assembled into the model defined in
-:mod:`md_reports.model`.
+Uses markdown-it-py with the GFM table extension and the dollar-math
+plugin enabled. Tokens are walked recursively and assembled into the
+model defined in :mod:`md_reports.model`.
 """
 
 from __future__ import annotations

@@ -398,14 +398,37 @@ def test_inline_math_renders_as_omml(tmp_path):
     assert "Energy is" in text and "here." in text
 
 
-def test_display_math_renders_centered_with_omml(tmp_path):
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-
+def test_display_math_uses_math_equation_style(tmp_path):
     out = tmp_path / "math_display.docx"
     convert_markdown_text("$$\\int_0^1 x\\,dx$$\n", out)
     doc = _open(out)
     math_para = next(p for p in doc.paragraphs if "oMath" in p._p.xml)
-    assert math_para.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert math_para.style.name == "Math equation"
+
+
+def test_display_math_reuses_existing_template_style(tmp_path):
+    """When the template already defines ``Math equation``, that style
+    is reused rather than re-created."""
+    from docx.enum.style import WD_STYLE_TYPE
+
+    from md_reports import DocxRenderer
+
+    template_src = get_default_template_path()
+    template = tmp_path / "tmpl.docx"
+    doc = DocxDocument(str(template_src))
+    style = doc.styles.add_style("Math equation", WD_STYLE_TYPE.PARAGRAPH)
+    style.base_style = doc.styles["Normal"]
+    doc.save(str(template))
+
+    out = tmp_path / "math_with_style.docx"
+    convert_markdown_text(
+        "$$x^2$$\n",
+        out,
+        renderer=DocxRenderer(template_path=template),
+    )
+    rendered = _open(out)
+    math_para = next(p for p in rendered.paragraphs if "oMath" in p._p.xml)
+    assert math_para.style.name == "Math equation"
 
 
 def test_invalid_inline_math_warns_and_falls_back_to_text(tmp_path):
