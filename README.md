@@ -133,7 +133,10 @@ recomputes both the SEQ counters and the REF fields so reordering or
 inserting figures keeps numbering and cross-references in sync.
 
 Unknown `#label` targets degrade to plain text with a warning (or raise
-in `strict_mode`).
+in `strict_mode`). Auto-filled reference text always matches the
+number the caption actually received; if a labelled figure or table
+fails to render (e.g. a missing image), references to it warn (or
+raise in `strict_mode`).
 
 #### Preview-friendly label form
 
