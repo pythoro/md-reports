@@ -127,7 +127,9 @@ See [Figure 1](#fig-revenue) and [](#tab-sales) for details.
 Each labelled caption is wrapped in a Word bookmark; each `#label` link
 becomes a Word `REF` field pointing at that bookmark. The link text
 becomes the cached display value; an empty link text auto-fills as
-`"<Prefix> <Number>"` (e.g. `Table 1`). Forward references work — the
+`"<Prefix> <Number>"` (e.g. `Table 1`, or `Table 2-1` with
+[chapter-numbered captions](#chapter-numbered-captions)). Forward
+references work — the
 parser resolves all labels before rendering. After F9 (or print), Word
 recomputes both the SEQ counters and the REF fields so reordering or
 inserting figures keeps numbering and cross-references in sync.
@@ -158,6 +160,50 @@ Both forms are supported and behave identically; pick whichever you
 prefer. The comment must come at the end of the caption. Image alt
 text is already invisible in previews, so the bare form is fine there
 and no comment variant is needed.
+
+### Chapter-numbered captions
+
+By default captions are numbered through the whole document
+(`Figure 1`, `Figure 2`, …). Set `caption_chapter_level` to number
+them per chapter instead, as Word's *Insert Caption → Include chapter
+number* does:
+
+```python
+from md_reports import ConversionOptions, convert_markdown_file
+
+convert_markdown_file(
+    "report.md",
+    "report.docx",
+    options=ConversionOptions(
+        caption_chapter_level=1,        # chapters are `#` headings
+        caption_chapter_separator=".",  # Figure 2.3 (default "-")
+    ),
+)
+```
+
+- Headings at the chapter level start a new chapter, and the figure
+  and table counters restart at every heading at that level or above.
+  With `caption_chapter_level=2`, captions read `Figure 1.2-3`.
+- The chapter number comes from Word's own heading numbering (a
+  `STYLEREF` field), so **the chapter headings are numbered** in the
+  output (`1 Introduction`, `1.1 Background`). If the template's
+  heading styles have no numbering, simple `1` / `1.1` numbering is
+  added to the output document (the template file is not changed). A
+  template that already numbers its headings is used as is.
+- Because headings are numbered automatically, don't type numbers into
+  heading text, and don't use `#` for the document title when chapters
+  are `#` headings — put the title in the template's title block (see
+  [Front matter](#front-matter)) or use `caption_chapter_level=2`.
+- A caption before the first chapter heading, or (at level 2 and
+  deeper) under a higher heading before its first chapter heading,
+  repeats another caption's number in Word. Both warn, or raise in
+  `strict_mode`.
+- Cached numbers match what Word computes. Templates whose heading
+  numbering is not plain decimal starting at 1 (e.g. roman numerals)
+  warn that the cached values may differ until fields are updated
+  (Ctrl+A, F9). A template that numbers only some of the heading
+  levels up to the chapter level warns and keeps document-wide
+  numbering.
 
 ### CSV embedding
 
@@ -325,8 +371,15 @@ ConversionOptions(
     table_caption_prefix="Table",
     project_root=None,          # root for resolving relative paths
                                 # to images and CSV files
+    sandboxed_context=False,    # sandbox Jinja2 (see Security model)
+    confine_assets=False,       # keep asset paths under project_root
+    caption_chapter_level=None, # 1-6: number captions per chapter
+    caption_chapter_separator="-",  # Figure 2-3
 )
 ```
+
+Invalid values (e.g. `caption_chapter_level=7`) raise
+`ValidationError` when the options are created.
 
 ## Templates
 
@@ -350,6 +403,12 @@ missing):
 - `Code` (optional; falls back to monospace runs in `Normal`)
 - `Math equation` (optional; auto-created based on `Normal` if missing —
   applied to display-math paragraphs)
+
+With `caption_chapter_level` set, `Heading 1` up to the chapter level
+must exist (otherwise `TemplateError`), and heading list numbering is
+added to the output if the template has none. Headings already in the
+template body at or above the chapter level are numbered too and count
+as chapters (with a warning).
 
 ### Front matter
 

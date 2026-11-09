@@ -141,6 +141,23 @@ caption marker in the markdown changes to match.
 - When you also pass `context=`, wrap each label in
   `{% raw %}…{% endraw %}`. See Jinja2 context below.
 
+### Chapter-numbered captions
+`ConversionOptions(caption_chapter_level=1, caption_chapter_separator=".")`
+numbers captions per chapter (`Figure 2.3`). Cross-references auto-fill
+in the same form.
+
+- Headings at the chapter level (1–6) are chapters, and they are
+  **numbered in the output** through Word list numbering. When the
+  template has none, numbering is added to the output only.
+- So don't use `#` for a document title when chapters are `#`. Put
+  the title in the template, or use level 2. Also don't type numbers
+  into heading text.
+- Every figure and table should sit under a chapter heading. Captions
+  placed before the first chapter, or under a higher heading before
+  its first chapter, repeat another caption's number in Word. These
+  warn, or raise under strict mode.
+- A template missing `Heading 1…L` raises `TemplateError`.
+
 ### CSV and DataFrame tables
 ````markdown
 ```csv-file
@@ -293,8 +310,9 @@ warnings, or use strict mode.
 
 ## Reference examples in this repo
 
-`examples/01_quickstart.py` to `examples/09_math.py` cover, in order:
-quickstart, Jinja2 context, tables and CSV, DataFrames, the reusable
-converter, strict mode, figures with cross-references, properties, and
-math. Run one with `uv run python examples/NN_name.py`. Output goes to
+`examples/01_quickstart.py` to `examples/10_chapter_captions.py`
+cover, in order: quickstart, Jinja2 context, tables and CSV,
+DataFrames, the reusable converter, strict mode, figures with
+cross-references, properties, math, and chapter-numbered captions.
+Run one with `uv run python examples/NN_name.py`. Output goes to
 `examples/output/`.

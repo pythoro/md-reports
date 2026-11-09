@@ -15,6 +15,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 from docx.text.paragraph import Paragraph as DocxParagraph
 
+from md_reports.errors import TemplateError
 from md_reports.model import (
     Block,
     BlockQuote,
@@ -42,7 +43,18 @@ from md_reports.model import (
     Text,
 )
 from md_reports.options import ConversionOptions
-from md_reports.renderers.base import BaseRenderer, RenderContext
+from md_reports.renderers.base import (
+    BaseRenderer,
+    CaptionNumber,
+    CaptionNumberer,
+    RenderContext,
+)
+from md_reports.renderers.docx.numbering import (
+    add_heading_numbering,
+    heading_numbering_levels,
+    numbering_is_plain_decimal,
+    numbering_state,
+)
 from md_reports.renderers.docx.template import (
     load_docx_template,
     style_exists,
@@ -55,6 +67,9 @@ _HYPERLINK_REL = (
 _VALID_LINK_SCHEMES = ("http://", "https://", "mailto:")
 
 _BOOKMARK_SAFE = re.compile(r"[^A-Za-z0-9_]")
+_HEADING_STYLE = re.compile(r"^Heading ([1-9])$")
+# Heading text that already starts with a number, e.g. "1 Intro".
+_TYPED_NUMBER = re.compile(r"^\s*\d+(\.\d+)*\.?\s")
 
 # Map user-facing keys to the python-docx ``CoreProperties`` attribute
 # they target. Includes the OOXML-canonical names plus a few aliases
@@ -114,6 +129,18 @@ class _DocxContext(RenderContext):
     rendered_labels: dict[str, str] = field(default_factory=dict)
     # Auto-filled REF cached-text elements awaiting the final number.
     pending_refs: list[tuple[str, Any]] = field(default_factory=list)
+    # Chapter level for captions, or None (document-wide numbering).
+    chapter_level: int | None = None
+    numberer: CaptionNumberer = field(
+        default_factory=lambda: CaptionNumberer(None)
+    )
+    # Captions before the first chapter heading: Word's STYLEREF looks
+    # forward, so their cached chapter number is filled in when the
+    # first chapter heading renders. (STYLEREF text, label, prefix,
+    # number) per caption.
+    early_chapter_fields: list[tuple[Any, str | None, str, CaptionNumber]] = (
+        field(default_factory=list)
+    )
 
 
 class DocxRenderer(BaseRenderer):
@@ -144,6 +171,7 @@ class DocxRenderer(BaseRenderer):
         ctx = _DocxContext(markdown_dir=markdown_dir, doc=docx_doc)
         if properties:
             self._apply_properties(ctx, properties)
+        self._setup_chapter_numbering(ctx)
         self._collect_labels(ctx, document.blocks)
         for block in document.blocks:
             self._render_block(ctx, block)
@@ -151,6 +179,75 @@ class DocxRenderer(BaseRenderer):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         docx_doc.save(str(output_path))
         return output_path
+
+    def _setup_chapter_numbering(self, ctx: _DocxContext) -> None:
+        """Prepare chapter-numbered captions, if enabled.
+
+        Word's chapter-numbered captions read the chapter number from
+        the chapter heading's list numbering (``STYLEREF``). Templates
+        without heading numbering get it added to the output; a
+        template that numbers only some of the heading levels is left
+        alone and captions fall back to document-wide numbering.
+        """
+        level = self.options.caption_chapter_level
+        if level is None:
+            return
+        doc = ctx.doc
+        missing = [
+            f"Heading {n}"
+            for n in range(1, level + 1)
+            if not style_exists(doc, f"Heading {n}")
+        ]
+        if missing:
+            raise TemplateError(
+                f"caption_chapter_level={level} needs heading styles "
+                f"Heading 1 to Heading {level}; the template lacks "
+                f"{', '.join(missing)}"
+            )
+        levels = heading_numbering_levels(doc, level)
+        state = numbering_state(levels)
+        if state == "partial":
+            self._warn_or_raise(
+                "The template numbers only some of Heading 1 to "
+                f"Heading {level}; captions use document-wide "
+                "numbering. Number all of those heading styles, or "
+                "none of them."
+            )
+            return
+        if state == "none":
+            add_heading_numbering(doc, level)
+            if self.template_path is not None:
+                warnings.warn(
+                    f"caption_chapter_level={level}: the template has "
+                    f"no heading numbering, so Heading 1 to Heading "
+                    f"{level} are numbered (1, 1.1, ...) in the output",
+                    stacklevel=4,
+                )
+        elif not numbering_is_plain_decimal(levels):
+            warnings.warn(
+                "The template's heading numbering is not plain decimal "
+                "starting at 1; chapter numbers in captions may show "
+                "differently until fields are updated in Word (F9)",
+                stacklevel=4,
+            )
+        ctx.chapter_level = level
+        ctx.numberer = CaptionNumberer(
+            level, self.options.caption_chapter_separator
+        )
+        seeded = 0
+        for para in doc.paragraphs:
+            name = para.style.name if para.style is not None else ""
+            m = _HEADING_STYLE.match(name or "")
+            if m and int(m.group(1)) <= level:
+                ctx.numberer.on_heading(int(m.group(1)))
+                seeded += 1
+        if seeded:
+            warnings.warn(
+                f"The template body has {seeded} heading(s) at level "
+                f"{level} or above; they are numbered and count as "
+                "chapters for captions",
+                stacklevel=4,
+            )
 
     # --- block dispatch -----------------------------------------------
 
@@ -188,6 +285,32 @@ class DocxRenderer(BaseRenderer):
         style = self._heading_style(ctx, h.level)
         para = ctx.doc.add_paragraph(style=style)
         self._render_inlines(ctx, para, h.children)
+        m = _HEADING_STYLE.match(style)
+        if m is None:
+            return
+        # Word counts the style actually applied, which may be a
+        # shallower fallback than the markdown heading level.
+        level = int(m.group(1))
+        ctx.numberer.on_heading(level)
+        chapter_level = ctx.chapter_level
+        if chapter_level is None or level > chapter_level:
+            return
+        if level == chapter_level and ctx.early_chapter_fields:
+            self._fill_early_chapter_fields(ctx)
+        if h.level > chapter_level:
+            warnings.warn(
+                f"Level-{h.level} heading {para.text!r} uses fallback "
+                f"style {style!r} and counts as a chapter",
+                stacklevel=3,
+            )
+        if _TYPED_NUMBER.match(para.text):
+            warnings.warn(
+                f"Heading {para.text!r} starts with a number, but "
+                "headings are numbered automatically when "
+                "caption_chapter_level is set; remove the typed number "
+                "so it does not show twice",
+                stacklevel=3,
+            )
 
     def _heading_style(self, ctx: _DocxContext, level: int) -> str:
         for lvl in range(level, 0, -1):
@@ -308,7 +431,7 @@ class DocxRenderer(BaseRenderer):
             self._emit_caption(
                 ctx,
                 self.options.table_caption_prefix,
-                ctx.table_counter,
+                ctx.numberer.next("table"),
                 t.caption,
                 label=t.label,
             )
@@ -400,7 +523,7 @@ class DocxRenderer(BaseRenderer):
         self._emit_caption(
             ctx,
             self.options.figure_caption_prefix,
-            ctx.figure_counter,
+            ctx.numberer.next("figure"),
             cap_inlines,
             label=label,
         )
@@ -449,7 +572,7 @@ class DocxRenderer(BaseRenderer):
             self._emit_caption(
                 ctx,
                 self.options.table_caption_prefix,
-                ctx.table_counter,
+                ctx.numberer.next("table"),
                 caption,
                 label=label,
             )
@@ -478,23 +601,84 @@ class DocxRenderer(BaseRenderer):
         self,
         ctx: _DocxContext,
         prefix: str,
-        number: int,
+        number: CaptionNumber,
         text_inlines: list[Inline],
         label: str | None = None,
     ) -> None:
+        if number.status != "ok":
+            self._warn_caption_chapter(ctx, prefix, number, text_inlines)
         style = "Caption" if style_exists(ctx.doc, "Caption") else "Normal"
         para = ctx.doc.add_paragraph(style=style)
         bookmark_id: int | None = None
         if label:
             bookmark_id = self._open_bookmark(ctx, para, _bookmark_name(label))
-            ctx.rendered_labels.setdefault(label, f"{prefix} {number}")
+            ctx.rendered_labels.setdefault(label, f"{prefix} {number.display}")
         para.add_run(f"{prefix} ")
-        self._append_field(para, f" SEQ {prefix} \\* ARABIC ", str(number))
+        seq_instr = f" SEQ {prefix} \\* ARABIC "
+        if number.chapter is not None:
+            chapter_text = self._append_field(
+                para, f" STYLEREF {ctx.chapter_level} \\s ", number.chapter
+            )
+            if number.status == "before_first_chapter":
+                ctx.early_chapter_fields.append(
+                    (chapter_text, label, prefix, number)
+                )
+            para.add_run(number.separator)
+            seq_instr += f"\\s {ctx.chapter_level} "
+        self._append_field(para, seq_instr, str(number.seq))
         if bookmark_id is not None:
             self._close_bookmark(para, bookmark_id)
         if text_inlines:
             para.add_run(": ")
             self._render_inlines(ctx, para, text_inlines)
+
+    def _warn_caption_chapter(
+        self,
+        ctx: _DocxContext,
+        prefix: str,
+        number: CaptionNumber,
+        text_inlines: list[Inline],
+    ) -> None:
+        text = "".join(
+            seg.text
+            for seg in self._collect_link_segments(text_inlines, _RunFormat())
+        )
+        name = f"{prefix} {text!r}" if text else f"{prefix} {number.seq}"
+        level = ctx.chapter_level
+        if number.status == "before_first_chapter":
+            detail = (
+                f"comes before the first level-{level} heading. Word "
+                "gives it the next chapter's number, so caption numbers "
+                f"repeat (or shows an error if no level-{level} heading "
+                "follows)"
+            )
+        else:
+            detail = (
+                f"follows a heading above level {level} with no "
+                f"level-{level} heading since. Word restarts the count "
+                "but keeps the previous chapter's number, so caption "
+                "numbers repeat"
+            )
+        self._warn_or_raise(f"Caption {name} {detail}")
+
+    def _fill_early_chapter_fields(self, ctx: _DocxContext) -> None:
+        """Give pre-chapter captions the first chapter's number.
+
+        Mirrors Word, whose ``STYLEREF`` searches forward when no
+        matching heading precedes the field.
+        """
+        chapter = ctx.numberer.last_chapter
+        if chapter is None:
+            return
+        for text_el, label, prefix, number in ctx.early_chapter_fields:
+            text_el.text = chapter
+            if label and ctx.rendered_labels.get(label) == (
+                f"{prefix} {number.display}"
+            ):
+                ctx.rendered_labels[label] = (
+                    f"{prefix} {chapter}{number.separator}{number.seq}"
+                )
+        ctx.early_chapter_fields.clear()
 
     # --- document properties ------------------------------------------
 
