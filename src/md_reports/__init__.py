@@ -6,6 +6,7 @@ Public API:
     convert_markdown_file(markdown_path, output_path, *, renderer,
         options, context) -> Path
     MarkdownConverter(renderer=None, options=None, default_context=None)
+    render_markdown_template(markdown_text, context, *, options) -> str
 
 Renderers:
     BaseRenderer            — abstract base for output-format renderers
@@ -28,6 +29,7 @@ from md_reports.api import (
     MarkdownConverter,
     convert_markdown_file,
     convert_markdown_text,
+    render_markdown_template,
 )
 from md_reports.errors import (
     MdAstDocxError,
@@ -57,4 +59,5 @@ __all__ = [
     "convert_markdown_file",
     "convert_markdown_text",
     "get_default_template_path",
+    "render_markdown_template",
 ]

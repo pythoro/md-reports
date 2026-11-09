@@ -243,3 +243,66 @@ def test_parse_function_accepts_context():
 
     assert isinstance(heading.children[0], Text)
     assert heading.children[0].text == "Hi"
+
+
+# --- render_markdown_template (public helper) -------------------------
+
+
+def test_render_markdown_template_substitutes():
+    from md_reports import render_markdown_template
+
+    out = render_markdown_template("# {{ title }}\n", {"title": "Q4"})
+    assert out == "# Q4\n"
+
+
+def test_render_markdown_template_empty_context_is_noop():
+    from md_reports import render_markdown_template
+
+    src = "keep {{ x }} and {#label}"
+    assert render_markdown_template(src, None) == src
+    assert render_markdown_template(src, {}) == src
+
+
+def test_render_markdown_template_to_csv_filter():
+    from md_reports import render_markdown_template
+
+    class FakeFrame:
+        def to_csv(self, index: bool = True) -> str:
+            return "a,b\n1,2\n"
+
+    out = render_markdown_template(
+        "```csv\n{{ df | to_csv }}\n```\n", {"df": FakeFrame()}
+    )
+    assert out == "```csv\na,b\n1,2\n```\n"
+
+
+def test_render_markdown_template_strict_raises():
+    from md_reports import render_markdown_template
+
+    with pytest.raises(ValidationError):
+        render_markdown_template(
+            "{{ missing }}",
+            {"other": 1},
+            options=ConversionOptions(strict_mode=True),
+        )
+
+
+def test_render_markdown_template_matches_conversion(tmp_path):
+    from md_reports import convert_markdown_file, render_markdown_template
+
+    src = "# {{ title }}\n\nValue is **{{ v }}**.\n"
+    ctx = {"title": "Report", "v": 42}
+    built = tmp_path / "report.md"
+    built.write_text(render_markdown_template(src, ctx), encoding="utf-8")
+    a = convert_markdown_file(built, tmp_path / "a.docx")
+    b = convert_markdown_text(src, tmp_path / "b.docx", context=ctx)
+    texts_a = [p.text for p in DocxDocument(a).paragraphs]
+    texts_b = [p.text for p in DocxDocument(b).paragraphs]
+    assert texts_a == texts_b
+
+
+def test_render_markdown_template_rejects_non_string():
+    from md_reports import render_markdown_template
+
+    with pytest.raises(ValidationError):
+        render_markdown_template(123, {"a": 1})  # type: ignore[arg-type]
