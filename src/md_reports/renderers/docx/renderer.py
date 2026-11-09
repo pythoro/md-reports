@@ -110,6 +110,10 @@ class _DocxContext(RenderContext):
 
     doc: DocxDoc
     bookmark_id_counter: int = 0
+    # label -> caption display text ("Figure 2") as actually rendered.
+    rendered_labels: dict[str, str] = field(default_factory=dict)
+    # Auto-filled REF cached-text elements awaiting the final number.
+    pending_refs: list[tuple[str, Any]] = field(default_factory=list)
 
 
 class DocxRenderer(BaseRenderer):
@@ -143,6 +147,7 @@ class DocxRenderer(BaseRenderer):
         self._collect_labels(ctx, document.blocks)
         for block in document.blocks:
             self._render_block(ctx, block)
+        self._resolve_pending_refs(ctx)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         docx_doc.save(str(output_path))
         return output_path
@@ -482,8 +487,9 @@ class DocxRenderer(BaseRenderer):
         bookmark_id: int | None = None
         if label:
             bookmark_id = self._open_bookmark(ctx, para, _bookmark_name(label))
+            ctx.rendered_labels.setdefault(label, f"{prefix} {number}")
         para.add_run(f"{prefix} ")
-        self._append_seq_field(para, prefix, str(number))
+        self._append_field(para, f" SEQ {prefix} \\* ARABIC ", str(number))
         if bookmark_id is not None:
             self._close_bookmark(para, bookmark_id)
         if text_inlines:
@@ -624,19 +630,22 @@ class DocxRenderer(BaseRenderer):
         end.set(qn("w:id"), str(bid))
         para._p.append(end)
 
-    def _append_ref_field(
+    def _append_field(
         self,
         para: DocxParagraph,
-        bookmark_name: str,
+        instr: str,
         displayed: str,
-        fmt: _RunFormat,
-    ) -> None:
-        """Append a Word REF field referencing ``bookmark_name``.
+        fmt: _RunFormat | None = None,
+    ) -> Any:
+        """Append a Word complex field with a cached display run.
 
-        Emitted as a complex field with a cached display run so the
-        document looks right before fields are first updated.
+        Emits ``w:fldChar`` begin / ``w:instrText`` / ``w:fldChar``
+        separate / cached display run / ``w:fldChar`` end. Word
+        recomputes the result on field update; the cached value keeps
+        first-open rendering correct in viewers that do not
+        auto-update fields. Returns the cached run's ``w:t`` element
+        so callers can rewrite the cached text later.
         """
-        instr = f" REF {bookmark_name} \\h "
         p = para._p
 
         begin_run = OxmlElement("w:r")
@@ -658,7 +667,7 @@ class DocxRenderer(BaseRenderer):
         sep_run.append(sep)
         p.append(sep_run)
 
-        disp_run = self._build_run(displayed, fmt)
+        disp_run = self._build_run(displayed, fmt or _RunFormat())
         p.append(disp_run)
 
         end_run = OxmlElement("w:r")
@@ -666,6 +675,7 @@ class DocxRenderer(BaseRenderer):
         end.set(qn("w:fldCharType"), "end")
         end_run.append(end)
         p.append(end_run)
+        return disp_run.find(qn("w:t"))
 
     def _build_run(self, text: str, fmt: _RunFormat) -> Any:
         """Build a standalone ``w:r`` element honouring ``fmt``."""
@@ -687,51 +697,6 @@ class DocxRenderer(BaseRenderer):
         t.text = text
         run.append(t)
         return run
-
-    def _append_seq_field(
-        self, para: DocxParagraph, name: str, displayed: str
-    ) -> None:
-        """Append a Word SEQ field producing an arabic counter.
-
-        Emitted as a complex field (``w:fldChar`` begin / ``w:instrText``
-        / ``w:fldChar`` separate / cached display run / ``w:fldChar``
-        end). Word recomputes the number on field update; the cached
-        value keeps first-open rendering correct in viewers that do
-        not auto-update fields.
-        """
-        instr = f" SEQ {name} \\* ARABIC "
-        p = para._p
-
-        begin_run = OxmlElement("w:r")
-        begin = OxmlElement("w:fldChar")
-        begin.set(qn("w:fldCharType"), "begin")
-        begin_run.append(begin)
-        p.append(begin_run)
-
-        instr_run = OxmlElement("w:r")
-        instr_el = OxmlElement("w:instrText")
-        instr_el.set(qn("xml:space"), "preserve")
-        instr_el.text = instr
-        instr_run.append(instr_el)
-        p.append(instr_run)
-
-        sep_run = OxmlElement("w:r")
-        sep = OxmlElement("w:fldChar")
-        sep.set(qn("w:fldCharType"), "separate")
-        sep_run.append(sep)
-        p.append(sep_run)
-
-        disp_run = OxmlElement("w:r")
-        disp_t = OxmlElement("w:t")
-        disp_t.text = displayed
-        disp_run.append(disp_t)
-        p.append(disp_run)
-
-        end_run = OxmlElement("w:r")
-        end = OxmlElement("w:fldChar")
-        end.set(qn("w:fldCharType"), "end")
-        end_run.append(end)
-        p.append(end_run)
 
     # --- inlines ------------------------------------------------------
 
@@ -984,11 +949,36 @@ class DocxRenderer(BaseRenderer):
             return
         prefix, number = target
         segments = self._collect_link_segments(link.children, fmt)
-        if not segments:
+        auto_fill = not segments
+        if auto_fill:
+            # Provisional; replaced in ``_resolve_pending_refs`` with
+            # the number the caption actually received.
             displayed = f"{prefix} {number}"
         else:
             displayed = "".join(seg.text for seg in segments)
-        self._append_ref_field(para, _bookmark_name(label), displayed, fmt)
+        text_el = self._append_field(
+            para, f" REF {_bookmark_name(label)} \\h ", displayed, fmt
+        )
+        if auto_fill:
+            ctx.pending_refs.append((label, text_el))
+
+    def _resolve_pending_refs(self, ctx: _DocxContext) -> None:
+        """Set auto-filled cross-reference text from rendered captions.
+
+        Numbers predicted by the label pre-walk can disagree with the
+        captions actually emitted (e.g. an image that failed to load
+        is never captioned), so the cached REF text is filled in only
+        once every caption has been rendered.
+        """
+        for label, text_el in ctx.pending_refs:
+            displayed = ctx.rendered_labels.get(label)
+            if displayed is None:
+                self._warn_or_raise(
+                    f"Cross-reference target {label!r} was not "
+                    "rendered (its figure or table failed to render)"
+                )
+                continue
+            text_el.text = displayed
 
     def _collect_link_segments(
         self, inlines: list[Inline], base: _RunFormat

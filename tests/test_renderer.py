@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import pytest
@@ -461,3 +462,100 @@ def _one_pixel_png() -> bytes:
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQ"
         "VR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
     )
+
+
+# --- cross-reference / caption agreement ------------------------------
+
+
+def _bookmarked_caption_texts(doc) -> dict[str, str]:
+    """Map bookmark name -> text inside that bookmark (caption label)."""
+    out: dict[str, str] = {}
+    for p in doc.paragraphs:
+        open_ids: dict[str, str] = {}
+        buf: dict[str, list[str]] = {}
+        for el in p._p.iter():
+            if el.tag == qn("w:bookmarkStart"):
+                open_ids[el.get(qn("w:id"))] = el.get(qn("w:name"))
+                buf[el.get(qn("w:name"))] = []
+            elif el.tag == qn("w:bookmarkEnd"):
+                name = open_ids.pop(el.get(qn("w:id")), None)
+                if name is not None:
+                    out[name] = "".join(buf[name])
+            elif el.tag == qn("w:t"):
+                for name in open_ids.values():
+                    buf[name].append(el.text or "")
+    return out
+
+
+def _ref_field_results(doc) -> list[tuple[str, str]]:
+    """Return ``(bookmark, cached text)`` for every REF field."""
+    results: list[tuple[str, str]] = []
+    for p in doc.paragraphs:
+        state = None
+        instr = ""
+        cached: list[str] = []
+        for el in p._p.iter():
+            if el.tag == qn("w:fldChar"):
+                kind = el.get(qn("w:fldCharType"))
+                if kind == "begin":
+                    state, instr, cached = "instr", "", []
+                elif kind == "separate":
+                    state = "result"
+                elif kind == "end":
+                    parts = instr.split()
+                    if parts and parts[0] == "REF":
+                        results.append((parts[1], "".join(cached)))
+                    state = None
+            elif el.tag == qn("w:instrText") and state == "instr":
+                instr += el.text or ""
+            elif el.tag == qn("w:t") and state == "result":
+                cached.append(el.text or "")
+    return results
+
+
+def _assert_refs_match_captions(doc) -> None:
+    captions = _bookmarked_caption_texts(doc)
+    refs = _ref_field_results(doc)
+    assert refs, "expected at least one REF field"
+    for bookmark, cached in refs:
+        assert cached == captions[bookmark], bookmark
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # image that fails to load is never captioned
+        "![Missing](missing.png)\n\n![Target {#t}](p.png)\n",
+        # inline image inside bold *is* captioned
+        "Text **![Bold](p.png)** more.\n\n![Target {#t}](p.png)\n",
+        # inline image in a list item is *not* captioned
+        "- item ![In list](p.png)\n\n![Target {#t}](p.png)\n",
+        # empty CSV fence is not captioned
+        "Table: Empty\n\n```csv\n```\n\n"
+        "Table: Target {#t}\n\n| a |\n|---|\n| 1 |\n",
+    ],
+    ids=["missing-image", "bold-image", "list-image", "empty-csv"],
+)
+def test_auto_filled_reference_matches_rendered_caption(tmp_path, body):
+    (tmp_path / "p.png").write_bytes(_one_pixel_png())
+    md_text = f"See [](#t) here.\n\n{body}\nAgain [](#t).\n"
+    out = tmp_path / "agree.docx"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        convert_markdown_text(
+            md_text,
+            out,
+            options=ConversionOptions(project_root=tmp_path),
+        )
+    _assert_refs_match_captions(_open(out))
+
+
+def test_reference_to_unrendered_caption_warns(tmp_path):
+    md_text = "See [](#gone).\n\n![Gone {#gone}](missing.png)\n"
+    out = tmp_path / "gone.docx"
+    with pytest.warns(UserWarning, match="was not rendered"):
+        convert_markdown_text(
+            md_text,
+            out,
+            options=ConversionOptions(project_root=tmp_path),
+        )
