@@ -1,6 +1,6 @@
 ---
 name: md-reports
-description: Generate Word (.docx) reports from Markdown in Python using the md-reports library. Use when writing or editing code that calls md_reports (convert_markdown_text, convert_markdown_file, MarkdownConverter, DocxRenderer, ConversionOptions), when producing a DOCX report from a Python script, or when authoring Markdown meant to be rendered by md-reports (figures, table captions, cross-references, CSV/DataFrame tables, LaTeX math, Jinja2 placeholders, document properties, custom templates).
+description: Generate Word (.docx) reports from Markdown in Python using the md-reports library. Use when writing or editing code that calls md_reports (convert_markdown_text, convert_markdown_file, MarkdownConverter, DocxRenderer, ConversionOptions), when producing a DOCX report from a Python script, when creating or updating a report under a project's reports/ folder, or when authoring Markdown meant to be rendered by md-reports (figures, table captions, cross-references, CSV/DataFrame tables, LaTeX math, Jinja2 placeholders, document properties, custom templates).
 ---
 
 # Using md-reports
@@ -24,6 +24,7 @@ Install: `uv add md-reports` (import name `md_reports`, Python >= 3.10).
 | Markdown lives in a `.md` file | `convert_markdown_file(md_path, out_path, ...)` |
 | Many reports, same template/defaults | `MarkdownConverter(...)` then `.convert_text` / `.convert_file` |
 | Custom house style | `DocxRenderer(template_path="style.docx", options=...)` |
+| Save the Jinja2-rendered markdown | `render_markdown_template(md, context, options=...)` returns `str` |
 
 All of them return the output `Path`. Keyword-only arguments shared by
 both functions:
@@ -59,37 +60,114 @@ keys win.
 
 ## Recommended script pattern
 
+Keep the prose in a `report.md` file next to the script. Render it in
+two steps: write the Jinja2-rendered markdown to disk, then build the
+DOCX **from that file**. The two deliverables always match, and the
+rendered markdown is a readable preview of the report.
+
 ```python
 from pathlib import Path
-from md_reports import ConversionOptions, convert_markdown_text
+from md_reports import (
+    ConversionOptions, convert_markdown_file, render_markdown_template,
+)
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parent
+BUILD = HERE / "build"
+OPTIONS = ConversionOptions(strict_mode=True)
 
-MD = """\
+(BUILD / "figures").mkdir(parents=True, exist_ok=True)
+# ... compute values, save charts to BUILD / "figures" ...
+
+source = (HERE / "report.md").read_text(encoding="utf-8")
+built_md = BUILD / "report.md"
+built_md.write_text(
+    render_markdown_template(
+        source, {"title": "Q4 Report", "pct": 14.5, "df": df},
+        options=OPTIONS,
+    ),
+    encoding="utf-8",
+)
+convert_markdown_file(                   # assets resolve against build/
+    built_md,
+    BUILD / "report.docx",
+    options=OPTIONS,
+    properties={"title": "Q4 Report", "author": "Finance"},
+)
+```
+
+Here `report.md` contains, for example:
+
+````markdown
 # {{ title }}
 
 Revenue grew **{{ pct }}%**, as shown in [](#fig-rev).
 
-![Revenue by quarter {% raw %}{#fig-rev}{% endraw %}](charts/revenue.png)
+![Revenue by quarter {% raw %}{#fig-rev}{% endraw %}](figures/revenue.png)
 
-Table: Revenue by region {% raw %}{#tab-region}{% endraw %}
+Table: Revenue by region {% raw %}<!-- {#tab-region} -->{% endraw %}
 
 ```csv
 {{ df | to_csv }}
 ```
+````
 
-The totals in [](#tab-region) are unaudited.
-"""
+For a quick one-off, `convert_markdown_text(md, out, context=...,
+base_dir=HERE)` does both steps in one call, but no rendered markdown
+is kept.
 
-convert_markdown_text(
-    MD,
-    HERE / "out" / "report.docx",
-    context={"title": "Q4 Report", "pct": 14.5, "df": df},
-    properties={"title": "Q4 Report", "author": "Finance"},
-    base_dir=HERE,                       # charts/revenue.png resolves here
-    options=ConversionOptions(strict_mode=True),
-)
+## Where reports live in a project
+
+When you create a report inside a project (a client repo), use this
+layout. A working copy is in [scaffold/](scaffold/). Copy the whole
+folder to `reports/<slug>/`, then edit `report.md` and `build.py`.
+
 ```
+reports/
+  _shared/                 # optional: house template.docx, shared helpers
+  <slug>/                  # one folder per report, kebab-case
+    report.md              # SOURCE: prose + Jinja2 placeholders
+    build.py               # the ONE entry point: data -> figures -> md -> docx
+    scripts/               # optional helper modules, if build.py gets big
+    data/                  # input data; read it, never write it
+    assets/                # optional hand-made images (logos, diagrams)
+    build/                 # GENERATED; gitignored; safe to delete
+      report.md            #   rendered markdown, no Jinja2 left
+      report.docx          #   built from build/report.md
+      figures/             #   charts written by build.py
+      assets/              #   copied from ../assets by build.py
+```
+
+Rules:
+
+- **Everything outside `build/` is source. Everything inside it is
+  generated.** Add `build/` (or `reports/*/build/`) to `.gitignore`.
+  Never hand-edit anything in `build/`.
+- **`build/` is self-contained.** Write image paths in `report.md`
+  relative to `build/`: `figures/x.png`, `assets/logo.png`.
+  `build.py` copies `assets/` into `build/`, so the same paths work
+  in a markdown preview and in the DOCX.
+- **Inline derived tables.** Pass them through the context, either
+  as a pre-built pipe table string or as `{{ df | to_csv }}`, so
+  that `build/report.md` stands on its own. `csv` fences show as
+  code blocks in a GitHub preview, while pipe tables preview as
+  tables. Avoid `csv-file`. If you must use it, the path is
+  `../data/x.csv`, which `confine_assets=True` rejects.
+- **`build.py`**: resolve every path from
+  `HERE = Path(__file__).resolve().parent` so it runs from any
+  working directory. Call `matplotlib.use("Agg")`. Use
+  `strict_mode=True`. Set at least the `title` property. Write only
+  inside its own `build/`. Print both output paths. Run it with
+  `uv run python reports/<slug>/build.py`.
+- **Shared house style.** Put it in `reports/_shared/template.docx`
+  and use it with
+  `DocxRenderer(template_path=HERE.parent / "_shared" / "template.docx", options=OPTIONS)`,
+  passed as `renderer=` instead of `options=`.
+- **Updating a report**: if `reports/<slug>/` already exists, edit it
+  and re-run `build.py`. Don't create a second copy. For a new
+  period, such as next quarter, create a new slug folder and copy the
+  previous `report.md` and `build.py` into it.
+- After building, check `build/report.md` for leftover `{{` or
+  stray text, and check the DOCX as described under Verifying output.
 
 Defaults worth following:
 
@@ -298,3 +376,6 @@ quickstart, Jinja2 context, tables and CSV, DataFrames, the reusable
 converter, strict mode, figures with cross-references, properties, and
 math. Run one with `uv run python examples/NN_name.py`. Output goes to
 `examples/output/`.
+
+`examples/reports/demo-report/` is a runnable copy of [scaffold/](scaffold/).
+Run it with `uv run --extra examples python examples/reports/demo-report/build.py`.

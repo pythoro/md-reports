@@ -5,11 +5,41 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from md_reports.context import apply_context
 from md_reports.errors import ValidationError
 from md_reports.options import ConversionOptions
 from md_reports.parser import parse
 from md_reports.renderers.base import BaseRenderer
 from md_reports.renderers.docx import DocxRenderer
+
+
+def render_markdown_template(
+    markdown_text: str,
+    context: dict[str, Any] | None,
+    *,
+    options: ConversionOptions | None = None,
+) -> str:
+    """Apply Jinja2 ``context`` to ``markdown_text`` and return the text.
+
+    This is the same substitution step the ``convert_*`` functions run
+    before parsing, with the same ``to_csv`` filter. Use it to save
+    the rendered Markdown next to the document, for example as a
+    preview-friendly copy of the report. Then convert that copy
+    without a context.
+
+    ``options.strict_mode`` and ``options.sandboxed_context`` control
+    error handling and sandboxing, as they do for conversion. An empty
+    or missing ``context`` returns the text unchanged.
+    """
+    if not isinstance(markdown_text, str):
+        raise ValidationError("markdown_text must be a string")
+    opts = options or ConversionOptions()
+    return apply_context(
+        markdown_text,
+        context,
+        opts.strict_mode,
+        sandboxed=opts.sandboxed_context,
+    )
 
 
 def convert_markdown_text(

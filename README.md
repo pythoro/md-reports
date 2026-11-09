@@ -311,6 +311,51 @@ Supported value types include `str`, `int`, `float`, `bool`, `None`,
 time and per-call `context=` overrides that merge over it (call-site
 keys win).
 
+**Keeping the rendered markdown.** `render_markdown_template` runs the
+same substitution step on its own and returns the text, using the same
+`to_csv` filter and the same `strict_mode`/`sandboxed_context`
+handling. Save its result and convert that file. You get a
+preview-friendly `.md` that matches the `.docx` exactly:
+
+```python
+from md_reports import render_markdown_template, convert_markdown_file
+
+built = Path("build/report.md")
+built.write_text(
+    render_markdown_template(source, context, options=opts),
+    encoding="utf-8",
+)
+convert_markdown_file(built, "build/report.docx", options=opts)
+```
+
+## Organising reports in a project
+
+A recommended layout for keeping reports inside a project repo. It
+is a convention, not something the library enforces:
+
+```
+reports/
+  _shared/            # optional: house template.docx, shared helpers
+  <slug>/             # one folder per report
+    report.md         # source: prose + Jinja2 placeholders
+    build.py          # single entry point: data -> figures -> md -> docx
+    scripts/          # optional helper modules
+    data/             # input data (read-only)
+    assets/           # optional hand-made images
+    build/            # generated and gitignored: report.md, report.docx,
+                      # figures/, and assets/ copied from ../assets
+```
+
+Everything outside `build/` is source. `build.py` renders `report.md`
+into `build/report.md` with `render_markdown_template`, then converts
+that file to `build/report.docx`. Write image paths in the source
+relative to `build/` (`figures/x.png`), so the built folder is
+self-contained and previews correctly. Rebuild with
+`uv run python reports/<slug>/build.py`.
+
+A working example is in
+[`examples/reports/demo-report/`](examples/reports/demo-report/).
+
 ## Options
 
 ```python
