@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from md_reports.errors import ValidationError
+
+#: Highest heading level the markdown parser can produce.
+MAX_CHAPTER_LEVEL = 6
+
 
 @dataclass(frozen=True)
 class ConversionOptions:
@@ -38,6 +43,20 @@ class ConversionOptions:
             escape the base are rejected (warned, or raised under
             ``strict_mode``). Enable when the markdown source is not
             fully trusted.
+        caption_chapter_level: When set (1-6), figure and table
+            captions are numbered per chapter, e.g. ``Figure 2-3``.
+            Headings at this level and above are chapters. In DOCX
+            output the chapter number comes from Word's heading
+            numbering (a ``STYLEREF`` field); heading numbering is
+            added to the output when the template has none. ``None``
+            (default) keeps document-wide numbering.
+        caption_chapter_separator: Text between the chapter number and
+            the caption counter (default ``-``; ``.`` gives
+            ``Figure 2.3``). Only used with ``caption_chapter_level``.
+
+    Raises:
+        ValidationError: If ``caption_chapter_level`` or
+            ``caption_chapter_separator`` is invalid.
     """
 
     strict_mode: bool = False
@@ -46,3 +65,21 @@ class ConversionOptions:
     project_root: str | Path | None = None
     sandboxed_context: bool = False
     confine_assets: bool = False
+    caption_chapter_level: int | None = None
+    caption_chapter_separator: str = "-"
+
+    def __post_init__(self) -> None:
+        level = self.caption_chapter_level
+        if level is not None and (
+            type(level) is not int or not 1 <= level <= MAX_CHAPTER_LEVEL
+        ):
+            raise ValidationError(
+                "caption_chapter_level must be None or an int from 1 "
+                f"to {MAX_CHAPTER_LEVEL}; got {level!r}"
+            )
+        sep = self.caption_chapter_separator
+        if not isinstance(sep, str) or not sep or "\n" in sep:
+            raise ValidationError(
+                "caption_chapter_separator must be a non-empty, "
+                f"single-line string; got {sep!r}"
+            )

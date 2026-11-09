@@ -44,6 +44,85 @@ class RenderContext:
     label_registry: dict[str, tuple[str, int]] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class CaptionNumber:
+    """The number a caption receives.
+
+    ``chapter`` is the chapter part (``"2"``, ``"1.3"``) or ``None``
+    when chapter numbering is off. ``status`` is ``"ok"``, or one of
+    ``"before_first_chapter"`` / ``"stale_chapter"`` when the caption
+    sits where Word's chapter lookup will not give a sensible number.
+    """
+
+    chapter: str | None
+    seq: int
+    separator: str = "-"
+    status: str = "ok"
+
+    @property
+    def display(self) -> str:
+        if self.chapter is None:
+            return str(self.seq)
+        return f"{self.chapter}{self.separator}{self.seq}"
+
+
+class CaptionNumberer:
+    """Track chapter and caption counters during a render walk.
+
+    Mirrors Word's caption fields so cached values match what Word
+    shows after a field update (verified against Word): the chapter
+    part is the number of the most recent heading at ``level`` (as
+    ``STYLEREF`` finds it), and counters restart at every heading at
+    ``level`` *or above* (as ``SEQ \\s`` does). With ``level=None``
+    numbering is document-wide.
+
+    Before the first heading at ``level`` Word's ``STYLEREF`` looks
+    forward to the next one; the renderer fills that number in once
+    it is known (see :attr:`last_chapter`).
+    """
+
+    def __init__(self, level: int | None, separator: str = "-") -> None:
+        self.level = level
+        self.separator = separator
+        self._path: list[int] = [0] * (level or 0)
+        self._last_chapter: str | None = None
+        # A heading above ``level`` arrived since the last chapter.
+        self._stale = False
+        self._counters: dict[str, int] = {}
+
+    def on_heading(self, level: int) -> None:
+        """Record a heading at ``level`` (1 = top)."""
+        if self.level is None or level > self.level:
+            return
+        self._path[level - 1] += 1
+        for i in range(level, self.level):
+            self._path[i] = 0
+        self._counters.clear()
+        if level == self.level:
+            self._last_chapter = ".".join(str(n) for n in self._path)
+            self._stale = False
+        else:
+            self._stale = self._last_chapter is not None
+
+    @property
+    def last_chapter(self) -> str | None:
+        """Number of the most recent heading at ``level``, if any."""
+        return self._last_chapter
+
+    def next(self, kind: str) -> CaptionNumber:
+        """Return the next number for caption ``kind`` (e.g. figure)."""
+        seq = self._counters.get(kind, 0) + 1
+        self._counters[kind] = seq
+        if self.level is None:
+            return CaptionNumber(None, seq)
+        if self._last_chapter is None:
+            return CaptionNumber(
+                "0", seq, self.separator, "before_first_chapter"
+            )
+        status = "stale_chapter" if self._stale else "ok"
+        return CaptionNumber(self._last_chapter, seq, self.separator, status)
+
+
 class BaseRenderer(ABC):
     """Abstract base for output-format renderers.
 
